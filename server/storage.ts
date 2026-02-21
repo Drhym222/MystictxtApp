@@ -38,14 +38,15 @@ export async function createOrder(
   clientId: string,
   serviceId: string,
   priceUsdCents: number,
+  deliveryType: string,
   intake: { fullName: string; dob?: string; question: string; details?: any }
 ): Promise<{ order: Order; intake: OrderIntake }> {
   const [order] = await db.insert(orders).values({
     clientId,
     serviceId,
     priceUsdCents,
-    status: "paid",
-    paidAt: new Date(),
+    deliveryType,
+    status: "pending",
   }).returning();
 
   const [intakeRecord] = await db.insert(orderIntake).values({
@@ -56,18 +57,31 @@ export async function createOrder(
     detailsJson: intake.details,
   }).returning();
 
-  const adminUsers = await db.select().from(users).where(eq(users.role, "admin"));
-  for (const admin of adminUsers) {
-    await db.insert(notifications).values({
-      userId: admin.id,
-      type: "new_order",
-      title: "New Order Received",
-      body: `New paid order #${order.id.slice(0, 8)} from ${intake.fullName}`,
-      orderId: order.id,
-    });
-  }
-
   return { order, intake: intakeRecord };
+}
+
+export async function updateOrderPayment(orderId: string, paymentReference: string): Promise<Order | undefined> {
+  const [order] = await db.update(orders).set({
+    status: "paid",
+    paymentReference,
+    paidAt: new Date(),
+  }).where(eq(orders.id, orderId)).returning();
+  
+  if (order) {
+    const adminUsers = await db.select().from(users).where(eq(users.role, "admin"));
+    const [intake] = await db.select().from(orderIntake).where(eq(orderIntake.orderId, orderId));
+    for (const admin of adminUsers) {
+      await db.insert(notifications).values({
+        userId: admin.id,
+        type: "new_order",
+        title: "New Order Received",
+        body: `New paid order #${order.id.slice(0, 8)} from ${intake?.fullName || 'a client'}`,
+        orderId: order.id,
+      });
+    }
+  }
+  
+  return order;
 }
 
 export async function getClientOrders(clientId: string): Promise<(Order & { service: Service; intake: OrderIntake | null })[]> {
@@ -179,13 +193,13 @@ export async function seedDatabase(): Promise<void> {
       slug: "telepathy-mind-implants",
       title: "Telepathy Mind Implants",
       description: "Harness the power of focused intention through telepathic mind implants. Our specialist channels specific thoughts and positive affirmations toward your target, creating subtle but powerful shifts in consciousness.",
-      priceUsdCents: 3000,
+      priceUsdCents: 499,
     },
     {
       slug: "live-chat",
       title: "Live Chat",
       description: "Connect with our mystic advisor in real-time through text. Ask your burning questions and receive immediate guidance. Each bundle includes multiple text replies for an in-depth conversation.",
-      priceUsdCents: 299,
+      priceUsdCents: 499,
     },
   ];
 
