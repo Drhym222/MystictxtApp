@@ -76,7 +76,15 @@ export default function OrderDetailScreen() {
           <Text style={styles.sectionTitle}>Service</Text>
           <View style={styles.detailCard}>
             <Text style={styles.detailValue}>{order.service?.title || "Service"}</Text>
-            <Text style={styles.detailPrice}>${(order.priceUsdCents / 100).toFixed(2)}</Text>
+            <View style={styles.serviceMetaRow}>
+              <View style={[styles.deliveryTypeBadge, order.deliveryType === "express" && styles.deliveryTypeBadgeExpress]}>
+                {order.deliveryType === "express" && <Ionicons name="flash" size={12} color="#0A0A1A" />}
+                <Text style={[styles.deliveryTypeBadgeText, order.deliveryType === "express" && styles.deliveryTypeBadgeTextExpress]}>
+                  {order.deliveryType === "express" ? "Express - 59 min" : "Standard - 24 hrs"}
+                </Text>
+              </View>
+              <Text style={styles.detailPrice}>${(order.priceUsdCents / 100).toFixed(2)}</Text>
+            </View>
           </View>
         </View>
 
@@ -205,6 +213,31 @@ const styles = StyleSheet.create({
     fontSize: 15,
     color: Colors.dark.text,
     lineHeight: 22,
+  },
+  serviceMetaRow: {
+    flexDirection: "row",
+    justifyContent: "space-between",
+    alignItems: "center",
+  },
+  deliveryTypeBadge: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 4,
+    backgroundColor: "rgba(212, 168, 83, 0.12)",
+    paddingHorizontal: 10,
+    paddingVertical: 4,
+    borderRadius: 20,
+  },
+  deliveryTypeBadgeExpress: {
+    backgroundColor: "rgba(232, 200, 120, 0.2)",
+  },
+  deliveryTypeBadgeText: {
+    fontSize: 12,
+    fontWeight: "600",
+    color: Colors.dark.accent,
+  },
+  deliveryTypeBadgeTextExpress: {
+    color: "#E8C878",
   },
   detailPrice: {
     fontSize: 20,

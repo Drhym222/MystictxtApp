@@ -1,4 +1,4 @@
-import React from "react";
+import React, { useState } from "react";
 import { View, Text, Pressable, StyleSheet, Platform, ScrollView, ActivityIndicator } from "react-native";
 import { LinearGradient } from "expo-linear-gradient";
 import { router, useLocalSearchParams } from "expo-router";
@@ -27,23 +27,21 @@ const SERVICE_COLORS: Record<string, [string, string, string]> = {
   "live-chat": ["#C0392B", "#922B21", "#641E16"],
 };
 
-const DELIVERY_INFO: Record<string, string> = {
-  "psychic-reading": "Your personalized psychic reading will be delivered within 24-48 hours via the app. You'll receive a notification when it's ready.",
-  "tarot-reading": "A detailed tarot spread interpretation will be delivered within 24-48 hours. Each card's meaning is explained in the context of your question.",
-  "telepathy-mind-reading": "Results from the telepathic session will be compiled and delivered within 48 hours. Includes detailed impressions and insights.",
-  "telepathy-mind-implants": "The telepathic implant session requires 3-5 days for full completion. Progress updates will be provided throughout.",
-  "live-chat": "Per-reply pricing. Each advisor response costs $2.99. Purchase a bundle to get started with your live consultation.",
-};
-
 export default function ServiceDetailScreen() {
   const { slug } = useLocalSearchParams<{ slug: string }>();
   const insets = useSafeAreaInsets();
   const { user } = useAuth();
   const topPadding = Platform.OS === "web" ? 67 : insets.top;
+  const [deliveryType, setDeliveryType] = useState<"standard" | "express">("standard");
 
   const { data: service, isLoading } = useQuery<Service>({
     queryKey: [`api/services/${slug}`],
   });
+
+  const standardPrice = 4.99;
+  const expressPrice = 14.99;
+  const currentPrice = deliveryType === "express" ? expressPrice : standardPrice;
+  const currentPriceCents = deliveryType === "express" ? 1499 : 499;
 
   function handleOrder() {
     try { Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium); } catch {}
@@ -52,7 +50,15 @@ export default function ServiceDetailScreen() {
       return;
     }
     if (service) {
-      router.push({ pathname: "/order-form", params: { serviceId: service.id, serviceTitle: service.title, price: String(service.priceUsdCents) } });
+      router.push({
+        pathname: "/order-form",
+        params: {
+          serviceId: service.id,
+          serviceTitle: service.title,
+          price: String(currentPriceCents),
+          deliveryType,
+        },
+      });
     }
   }
 
@@ -67,7 +73,6 @@ export default function ServiceDetailScreen() {
 
   const iconName = SERVICE_ICONS[service.slug] || "star";
   const colors = SERVICE_COLORS[service.slug] || ["#2C3E50", "#1A252F", "#111820"];
-  const deliveryInfo = DELIVERY_INFO[service.slug] || "Delivery details will be provided after order confirmation.";
 
   return (
     <View style={[styles.container, { paddingTop: topPadding }]}>
@@ -88,7 +93,7 @@ export default function ServiceDetailScreen() {
             <Ionicons name={iconName as any} size={48} color="rgba(255,255,255,0.9)" />
           </View>
           <Text style={styles.heroTitle}>{service.title}</Text>
-          <Text style={styles.heroPrice}>${(service.priceUsdCents / 100).toFixed(2)}</Text>
+          <Text style={styles.heroSubtitle}>Starting at ${standardPrice.toFixed(2)}</Text>
         </LinearGradient>
 
         <View style={styles.section}>
@@ -97,10 +102,55 @@ export default function ServiceDetailScreen() {
         </View>
 
         <View style={styles.section}>
-          <Text style={styles.sectionTitle}>Delivery</Text>
-          <View style={styles.deliveryCard}>
-            <Ionicons name="time-outline" size={20} color={Colors.dark.accent} />
-            <Text style={styles.deliveryText}>{deliveryInfo}</Text>
+          <Text style={styles.sectionTitle}>Choose Delivery Speed</Text>
+          <View style={styles.deliveryOptions}>
+            <Pressable
+              onPress={() => {
+                setDeliveryType("standard");
+                try { Haptics.selectionAsync(); } catch {}
+              }}
+              style={[
+                styles.deliveryOption,
+                deliveryType === "standard" && styles.deliveryOptionActive,
+              ]}
+            >
+              <View style={styles.deliveryOptionHeader}>
+                <View style={[styles.radioOuter, deliveryType === "standard" && styles.radioOuterActive]}>
+                  {deliveryType === "standard" && <View style={styles.radioInner} />}
+                </View>
+                <View style={styles.deliveryOptionInfo}>
+                  <Text style={[styles.deliveryOptionTitle, deliveryType === "standard" && styles.deliveryOptionTitleActive]}>Standard</Text>
+                  <Text style={styles.deliveryOptionTime}>24-hour delivery</Text>
+                </View>
+                <Text style={[styles.deliveryOptionPrice, deliveryType === "standard" && styles.deliveryOptionPriceActive]}>${standardPrice.toFixed(2)}</Text>
+              </View>
+            </Pressable>
+
+            <Pressable
+              onPress={() => {
+                setDeliveryType("express");
+                try { Haptics.selectionAsync(); } catch {}
+              }}
+              style={[
+                styles.deliveryOption,
+                deliveryType === "express" && styles.deliveryOptionActiveExpress,
+              ]}
+            >
+              <View style={styles.expressTag}>
+                <Ionicons name="flash" size={10} color="#0A0A1A" />
+                <Text style={styles.expressTagText}>FAST</Text>
+              </View>
+              <View style={styles.deliveryOptionHeader}>
+                <View style={[styles.radioOuter, deliveryType === "express" && styles.radioOuterActiveExpress]}>
+                  {deliveryType === "express" && <View style={styles.radioInnerExpress} />}
+                </View>
+                <View style={styles.deliveryOptionInfo}>
+                  <Text style={[styles.deliveryOptionTitle, deliveryType === "express" && styles.deliveryOptionTitleActiveExpress]}>Express</Text>
+                  <Text style={styles.deliveryOptionTime}>59-minute delivery</Text>
+                </View>
+                <Text style={[styles.deliveryOptionPrice, deliveryType === "express" && styles.deliveryOptionPriceActiveExpress]}>${expressPrice.toFixed(2)}</Text>
+              </View>
+            </Pressable>
           </View>
         </View>
 
@@ -119,6 +169,12 @@ export default function ServiceDetailScreen() {
               <Ionicons name="checkmark-circle" size={18} color={Colors.dark.success} />
               <Text style={styles.featureText}>In-app notification when delivered</Text>
             </View>
+            {deliveryType === "express" && (
+              <View style={styles.featureItem}>
+                <Ionicons name="flash" size={18} color="#E8C878" />
+                <Text style={styles.featureText}>Priority processing within 59 minutes</Text>
+              </View>
+            )}
           </View>
         </View>
 
@@ -127,8 +183,8 @@ export default function ServiceDetailScreen() {
 
       <View style={[styles.bottomBar, { paddingBottom: Platform.OS === "web" ? 34 : insets.bottom + 12 }]}>
         <View style={styles.bottomPrice}>
-          <Text style={styles.bottomPriceLabel}>Total</Text>
-          <Text style={styles.bottomPriceValue}>${(service.priceUsdCents / 100).toFixed(2)}</Text>
+          <Text style={styles.bottomPriceLabel}>{deliveryType === "express" ? "Express" : "Standard"}</Text>
+          <Text style={styles.bottomPriceValue}>${currentPrice.toFixed(2)}</Text>
         </View>
         <Pressable
           onPress={handleOrder}
@@ -183,10 +239,10 @@ const styles = StyleSheet.create({
     color: "#fff",
     textAlign: "center",
   },
-  heroPrice: {
-    fontSize: 28,
-    fontWeight: "800",
-    color: Colors.dark.accentLight,
+  heroSubtitle: {
+    fontSize: 18,
+    fontWeight: "600",
+    color: "rgba(255,255,255,0.7)",
   },
   section: {
     marginBottom: 24,
@@ -204,21 +260,104 @@ const styles = StyleSheet.create({
     color: Colors.dark.textSecondary,
     lineHeight: 22,
   },
-  deliveryCard: {
-    flexDirection: "row",
+  deliveryOptions: {
     gap: 12,
-    backgroundColor: Colors.dark.card,
-    padding: 16,
-    borderRadius: 14,
-    borderWidth: 1,
-    borderColor: Colors.dark.border,
-    alignItems: "flex-start",
   },
-  deliveryText: {
+  deliveryOption: {
+    backgroundColor: Colors.dark.card,
+    borderRadius: 14,
+    padding: 16,
+    borderWidth: 1.5,
+    borderColor: Colors.dark.border,
+    overflow: "hidden",
+  },
+  deliveryOptionActive: {
+    borderColor: Colors.dark.accent,
+    backgroundColor: "rgba(212, 168, 83, 0.08)",
+  },
+  deliveryOptionActiveExpress: {
+    borderColor: "#E8C878",
+    backgroundColor: "rgba(232, 200, 120, 0.08)",
+  },
+  deliveryOptionHeader: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 12,
+  },
+  radioOuter: {
+    width: 22,
+    height: 22,
+    borderRadius: 11,
+    borderWidth: 2,
+    borderColor: Colors.dark.textSecondary,
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  radioOuterActive: {
+    borderColor: Colors.dark.accent,
+  },
+  radioOuterActiveExpress: {
+    borderColor: "#E8C878",
+  },
+  radioInner: {
+    width: 12,
+    height: 12,
+    borderRadius: 6,
+    backgroundColor: Colors.dark.accent,
+  },
+  radioInnerExpress: {
+    width: 12,
+    height: 12,
+    borderRadius: 6,
+    backgroundColor: "#E8C878",
+  },
+  deliveryOptionInfo: {
     flex: 1,
-    fontSize: 14,
+    gap: 2,
+  },
+  deliveryOptionTitle: {
+    fontSize: 16,
+    fontWeight: "600",
+    color: Colors.dark.text,
+  },
+  deliveryOptionTitleActive: {
+    color: Colors.dark.accent,
+  },
+  deliveryOptionTitleActiveExpress: {
+    color: "#E8C878",
+  },
+  deliveryOptionTime: {
+    fontSize: 13,
     color: Colors.dark.textSecondary,
-    lineHeight: 20,
+  },
+  deliveryOptionPrice: {
+    fontSize: 20,
+    fontWeight: "800",
+    color: Colors.dark.textSecondary,
+  },
+  deliveryOptionPriceActive: {
+    color: Colors.dark.accent,
+  },
+  deliveryOptionPriceActiveExpress: {
+    color: "#E8C878",
+  },
+  expressTag: {
+    position: "absolute",
+    top: 0,
+    right: 0,
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 3,
+    backgroundColor: "#E8C878",
+    paddingHorizontal: 8,
+    paddingVertical: 3,
+    borderBottomLeftRadius: 8,
+  },
+  expressTagText: {
+    fontSize: 10,
+    fontWeight: "800",
+    color: "#0A0A1A",
+    letterSpacing: 1,
   },
   featureList: {
     gap: 12,
