@@ -1,0 +1,227 @@
+import React from "react";
+import { View, Text, Pressable, StyleSheet, Platform, ScrollView, ActivityIndicator } from "react-native";
+import { LinearGradient } from "expo-linear-gradient";
+import { router, useLocalSearchParams } from "expo-router";
+import { useSafeAreaInsets } from "react-native-safe-area-context";
+import { useQuery } from "@tanstack/react-query";
+import { Ionicons } from "@expo/vector-icons";
+import { useAuth } from "@/lib/auth-context";
+import { apiFetch } from "@/lib/api";
+import Colors from "@/constants/colors";
+
+const STATUS_CONFIG: Record<string, { color: string; icon: string; label: string }> = {
+  pending: { color: Colors.dark.statusPending, icon: "time-outline", label: "Pending" },
+  paid: { color: Colors.dark.statusPaid, icon: "checkmark-circle-outline", label: "Paid" },
+  delivered: { color: Colors.dark.statusDelivered, icon: "gift-outline", label: "Delivered" },
+  cancelled: { color: Colors.dark.statusCancelled, icon: "close-circle-outline", label: "Cancelled" },
+};
+
+export default function OrderDetailScreen() {
+  const { id } = useLocalSearchParams<{ id: string }>();
+  const insets = useSafeAreaInsets();
+  const { token } = useAuth();
+  const topPadding = Platform.OS === "web" ? 67 : insets.top;
+
+  const { data: order, isLoading } = useQuery({
+    queryKey: ["order-detail", id],
+    queryFn: () => apiFetch(`api/orders/${id}`, { token }),
+    enabled: !!token && !!id,
+  });
+
+  if (isLoading || !order) {
+    return (
+      <View style={[styles.container, { paddingTop: topPadding }]}>
+        <LinearGradient colors={["#0A0A1A", "#12122A"]} style={StyleSheet.absoluteFill} />
+        <View style={styles.header}>
+          <Pressable onPress={() => router.back()} hitSlop={20}>
+            <Ionicons name="chevron-back" size={28} color={Colors.dark.text} />
+          </Pressable>
+        </View>
+        <ActivityIndicator size="large" color={Colors.dark.accent} style={{ marginTop: 100 }} />
+      </View>
+    );
+  }
+
+  const config = STATUS_CONFIG[order.status] || STATUS_CONFIG.pending;
+  const createdDate = new Date(order.createdAt).toLocaleDateString("en-US", {
+    weekday: "long", month: "long", day: "numeric", year: "numeric",
+  });
+
+  return (
+    <View style={[styles.container, { paddingTop: topPadding }]}>
+      <LinearGradient colors={["#0A0A1A", "#12122A"]} style={StyleSheet.absoluteFill} />
+
+      <View style={styles.header}>
+        <Pressable onPress={() => router.back()} hitSlop={20}>
+          <Ionicons name="chevron-back" size={28} color={Colors.dark.text} />
+        </Pressable>
+        <Text style={styles.headerTitle}>Order Details</Text>
+        <View style={{ width: 28 }} />
+      </View>
+
+      <ScrollView
+        contentContainerStyle={[styles.scrollContent, { paddingBottom: (Platform.OS === "web" ? 34 : insets.bottom) + 20 }]}
+        showsVerticalScrollIndicator={false}
+      >
+        <View style={styles.statusCard}>
+          <View style={[styles.statusBadgeLarge, { backgroundColor: `${config.color}20` }]}>
+            <Ionicons name={config.icon as any} size={24} color={config.color} />
+            <Text style={[styles.statusLabel, { color: config.color }]}>{config.label}</Text>
+          </View>
+          <Text style={styles.orderId}>#{order.id.slice(0, 8)}</Text>
+          <Text style={styles.orderDate}>{createdDate}</Text>
+        </View>
+
+        <View style={styles.section}>
+          <Text style={styles.sectionTitle}>Service</Text>
+          <View style={styles.detailCard}>
+            <Text style={styles.detailValue}>{order.service?.title || "Service"}</Text>
+            <Text style={styles.detailPrice}>${(order.priceUsdCents / 100).toFixed(2)}</Text>
+          </View>
+        </View>
+
+        {order.intake && (
+          <View style={styles.section}>
+            <Text style={styles.sectionTitle}>Your Details</Text>
+            <View style={styles.detailCard}>
+              <View style={styles.detailRow}>
+                <Text style={styles.detailLabel}>Name</Text>
+                <Text style={styles.detailValue}>{order.intake.fullName}</Text>
+              </View>
+              {order.intake.dobOptional && (
+                <View style={styles.detailRow}>
+                  <Text style={styles.detailLabel}>Date of Birth</Text>
+                  <Text style={styles.detailValue}>{order.intake.dobOptional}</Text>
+                </View>
+              )}
+              <View style={styles.detailRow}>
+                <Text style={styles.detailLabel}>Question</Text>
+                <Text style={styles.detailValueMulti}>{order.intake.question}</Text>
+              </View>
+            </View>
+          </View>
+        )}
+
+        {order.adminResponse && (
+          <View style={styles.section}>
+            <Text style={styles.sectionTitle}>Your Reading</Text>
+            <View style={styles.responseCard}>
+              <Ionicons name="sparkles" size={20} color={Colors.dark.accent} />
+              <Text style={styles.responseText}>{order.adminResponse}</Text>
+            </View>
+          </View>
+        )}
+      </ScrollView>
+    </View>
+  );
+}
+
+const styles = StyleSheet.create({
+  container: {
+    flex: 1,
+    backgroundColor: Colors.dark.background,
+  },
+  header: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "space-between",
+    paddingHorizontal: 16,
+    paddingVertical: 12,
+  },
+  headerTitle: {
+    fontFamily: "Cinzel_700Bold",
+    fontSize: 18,
+    color: Colors.dark.text,
+  },
+  scrollContent: {
+    paddingHorizontal: 20,
+    gap: 20,
+  },
+  statusCard: {
+    backgroundColor: Colors.dark.card,
+    borderRadius: 16,
+    padding: 24,
+    alignItems: "center",
+    gap: 8,
+    borderWidth: 1,
+    borderColor: Colors.dark.border,
+  },
+  statusBadgeLarge: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 8,
+    paddingHorizontal: 16,
+    paddingVertical: 8,
+    borderRadius: 24,
+    marginBottom: 4,
+  },
+  statusLabel: {
+    fontSize: 16,
+    fontWeight: "700",
+  },
+  orderId: {
+    fontSize: 14,
+    color: Colors.dark.textSecondary,
+    fontFamily: Platform.select({ ios: "Menlo", default: "monospace" }),
+  },
+  orderDate: {
+    fontSize: 13,
+    color: Colors.dark.textSecondary,
+  },
+  section: {
+    gap: 10,
+  },
+  sectionTitle: {
+    fontSize: 14,
+    fontWeight: "700",
+    color: Colors.dark.textSecondary,
+    textTransform: "uppercase",
+    letterSpacing: 1,
+  },
+  detailCard: {
+    backgroundColor: Colors.dark.card,
+    borderRadius: 14,
+    padding: 16,
+    gap: 14,
+    borderWidth: 1,
+    borderColor: Colors.dark.border,
+  },
+  detailRow: {
+    gap: 4,
+  },
+  detailLabel: {
+    fontSize: 12,
+    color: Colors.dark.textSecondary,
+    fontWeight: "600",
+    textTransform: "uppercase",
+    letterSpacing: 0.5,
+  },
+  detailValue: {
+    fontSize: 15,
+    color: Colors.dark.text,
+    fontWeight: "500",
+  },
+  detailValueMulti: {
+    fontSize: 15,
+    color: Colors.dark.text,
+    lineHeight: 22,
+  },
+  detailPrice: {
+    fontSize: 20,
+    fontWeight: "800",
+    color: Colors.dark.accent,
+  },
+  responseCard: {
+    backgroundColor: "rgba(212, 168, 83, 0.08)",
+    borderRadius: 14,
+    padding: 16,
+    gap: 12,
+    borderWidth: 1,
+    borderColor: "rgba(212, 168, 83, 0.2)",
+  },
+  responseText: {
+    fontSize: 15,
+    color: Colors.dark.text,
+    lineHeight: 24,
+  },
+});
