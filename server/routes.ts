@@ -6,7 +6,7 @@ import {
   getUserByEmail, createUser, getServices, getServiceBySlug, getServiceById,
   createOrder, getClientOrders, getAllOrders, getOrderById, updateOrderStatus,
   getNotifications, getUnreadNotificationCount, markNotificationRead,
-  markAllNotificationsRead, seedDatabase,
+  markAllNotificationsRead, seedDatabase, updateOrderPayment,
 } from "./storage";
 import { registerSchema, loginSchema, createOrderSchema } from "@shared/schema";
 
@@ -128,14 +128,17 @@ export async function registerRoutes(app: Express): Promise<Server> {
       if (!parsed.success) {
         return res.status(400).json({ message: "Invalid input", errors: parsed.error.flatten() });
       }
-      const { serviceId, fullName, dob, question, details } = parsed.data;
+      const { serviceId, deliveryType, fullName, dob, question, details } = parsed.data;
       const service = await getServiceById(serviceId);
       if (!service) return res.status(404).json({ message: "Service not found" });
+
+      const priceUsdCents = deliveryType === "express" ? 1499 : 499;
 
       const result = await createOrder(
         (req as any).userId,
         serviceId,
-        service.priceUsdCents,
+        priceUsdCents,
+        deliveryType || "standard",
         { fullName, dob, question, details }
       );
       res.json(result);
@@ -221,6 +224,157 @@ export async function registerRoutes(app: Express): Promise<Server> {
       res.json({ success: true });
     } catch (err) {
       res.status(500).json({ message: "Failed to mark all read" });
+    }
+  });
+
+  app.post("/api/payments/initialize", authMiddleware, async (req: Request, res: Response) => {
+    try {
+      const { orderId } = req.body;
+      if (!orderId) return res.status(400).json({ message: "Order ID required" });
+
+      const order = await getOrderById(orderId);
+      if (!order) return res.status(404).json({ message: "Order not found" });
+      if (order.clientId !== (req as any).userId) {
+        return res.status(403).json({ message: "Access denied" });
+      }
+      if (order.status !== "pending") {
+        return res.status(400).json({ message: "Order already processed" });
+      }
+
+      const { getUserById } = await import("./storage");
+      const user = await getUserById((req as any).userId);
+      if (!user) return res.status(404).json({ message: "User not found" });
+
+      const amountUsd = order.priceUsdCents / 100;
+      const reference = `MYSTIC-${order.id}-${Date.now()}`;
+      
+      const korapaySecret = process.env.KORAPAY_SECRET_KEY;
+      if (!korapaySecret) {
+        return res.status(500).json({ message: "Payment not configured" });
+      }
+
+      const baseUrl = `https://${process.env.REPLIT_DEV_DOMAIN || req.get('host')}`;
+
+      const response = await globalThis.fetch("https://api.korapay.com/merchant/api/v1/charges/initialize", {
+        method: "POST",
+        headers: {
+          "Authorization": `Bearer ${korapaySecret}`,
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({
+          reference,
+          amount: amountUsd,
+          currency: "USD",
+          redirect_url: `${baseUrl}/api/payments/callback`,
+          customer: {
+            name: user.email.split("@")[0],
+            email: user.email,
+          },
+          notification_url: `${baseUrl}/api/payments/webhook`,
+          narration: `MysticTxt - ${order.service?.title || 'Service'} (${(order as any).deliveryType === 'express' ? 'Express' : 'Standard'})`,
+        }),
+      });
+
+      const data = await response.json();
+      
+      if (!data.status) {
+        console.error("Korapay init error:", data);
+        return res.status(500).json({ message: "Failed to initialize payment" });
+      }
+
+      res.json({
+        checkoutUrl: data.data.checkout_url,
+        reference: data.data.reference || reference,
+      });
+    } catch (err) {
+      console.error("Payment init error:", err);
+      res.status(500).json({ message: "Failed to initialize payment" });
+    }
+  });
+
+  app.post("/api/payments/webhook", async (req: Request, res: Response) => {
+    try {
+      const { event, data } = req.body;
+      console.log("Korapay webhook received:", event, data?.reference);
+
+      if (event === "charge.success" && data) {
+        const ref = data.reference || data.payment_reference;
+        if (ref) {
+          const orderIdMatch = ref.match(/MYSTIC-([^-]+)-/);
+          if (orderIdMatch) {
+            const orderId = orderIdMatch[1];
+            await updateOrderPayment(orderId, ref);
+            console.log("Order paid via webhook:", orderId);
+          }
+        }
+      }
+
+      res.json({ status: "success" });
+    } catch (err) {
+      console.error("Webhook error:", err);
+      res.json({ status: "received" });
+    }
+  });
+
+  app.get("/api/payments/callback", async (req: Request, res: Response) => {
+    try {
+      const reference = req.query.reference as string;
+      if (reference) {
+        const orderIdMatch = reference.match(/MYSTIC-([^-]+)-/);
+        if (orderIdMatch) {
+          const orderId = orderIdMatch[1];
+          
+          const korapaySecret = process.env.KORAPAY_SECRET_KEY;
+          if (korapaySecret) {
+            const verifyRes = await globalThis.fetch(
+              `https://api.korapay.com/merchant/api/v1/charges/${reference}`,
+              {
+                headers: { "Authorization": `Bearer ${korapaySecret}` },
+              }
+            );
+            const verifyData = await verifyRes.json();
+            if (verifyData.status && verifyData.data?.status === "success") {
+              await updateOrderPayment(orderId, reference);
+            }
+          }
+        }
+      }
+      
+      res.send(`
+        <!DOCTYPE html>
+        <html>
+        <head><title>Payment Complete</title>
+        <style>
+          body { background: #0A0A1A; color: #E8E8F0; font-family: sans-serif; display: flex; align-items: center; justify-content: center; height: 100vh; margin: 0; }
+          .container { text-align: center; padding: 40px; }
+          h1 { color: #D4A853; margin-bottom: 16px; }
+          p { color: #8888AA; }
+        </style>
+        </head>
+        <body>
+          <div class="container">
+            <h1>Payment Complete</h1>
+            <p>Your payment has been processed. You can close this window and return to the app.</p>
+          </div>
+        </body>
+        </html>
+      `);
+    } catch (err) {
+      console.error("Callback error:", err);
+      res.send("Payment processing. You can close this window.");
+    }
+  });
+
+  app.get("/api/payments/verify/:orderId", authMiddleware, async (req: Request, res: Response) => {
+    try {
+      const order = await getOrderById(req.params.orderId);
+      if (!order) return res.status(404).json({ message: "Order not found" });
+      if (order.clientId !== (req as any).userId) {
+        return res.status(403).json({ message: "Access denied" });
+      }
+      res.json({ status: order.status, paid: order.status !== "pending" });
+    } catch (err) {
+      res.status(500).json({ message: "Failed to verify" });
     }
   });
 

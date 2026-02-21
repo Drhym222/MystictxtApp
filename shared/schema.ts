@@ -25,6 +25,7 @@ export const orders = pgTable("orders", {
   id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
   clientId: varchar("client_id").notNull().references(() => users.id),
   serviceId: varchar("service_id").notNull().references(() => services.id),
+  deliveryType: text("delivery_type").notNull().default("standard"),
   status: text("status").notNull().default("pending"),
   priceUsdCents: integer("price_usd_cents").notNull(),
   paymentReference: text("payment_reference"),
@@ -73,6 +74,7 @@ export const loginSchema = z.object({
 
 export const createOrderSchema = z.object({
   serviceId: z.string(),
+  deliveryType: z.enum(["standard", "express"]).default("standard"),
   fullName: z.string().min(1),
   dob: z.string().optional(),
   question: z.string().min(1),
