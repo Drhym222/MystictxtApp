@@ -1,0 +1,202 @@
+# MysticTxt — 1 Website, 2 Portals (Client + Legacy Admin) — KORAPAY PAYMENTS
+
+## PROJECT NAME
+MysticTxt
+
+## GOAL
+Build ONE production-ready website like PsychicTxt with TWO connected portals:
+- Client Portal (public): clients sign up/login, browse services, place orders, pay, view history
+- Legacy Portal (private): ONLY ONE legacy user (admin) logs in to receive orders, deliver replies, manage order status, and see notifications
+
+All orders placed by clients must instantly reflect in the Legacy Portal, and also trigger email notifications to the admin.
+
+## IMPORTANT BILLING RULE
+All service prices are listed and stored in USD.
+At checkout, the backend converts USD → payable local currency (e.g., NGN) and charges via Korapay.
+Conversion happens server-side (not client-side).
+Payment is verified by Korapay webhook before marking an order as PAID.
+
+## TECH STACK
+Frontend:
+- Next.js (App Router) + TypeScript
+- Tailwind CSS
+
+Backend:
+- Next.js API routes
+- PostgreSQL (Neon or any managed Postgres)
+- Prisma ORM
+
+Auth:
+- Email/password login
+- JWT session (or NextAuth with Credentials)
+
+Payments:
+- Korapay API (Hosted Checkout or Inline)
+- Webhooks required (no “success page = paid”)
+
+Email:
+- Resend (or SendGrid)
+
+## REPO STRUCTURE
+mystictxt/
+  app/
+    (public)/
+      page.tsx
+      services/
+      auth/
+      dashboard/
+    (legacy)/
+      legacy-login/
+      legacy-dashboard/
+  lib/
+    auth/
+    db/
+    payments/
+    fx/
+  prisma/
+    schema.prisma
+    seed.ts
+  app/api/
+    auth/
+    legacy/
+    orders/
+    payments/
+    webhooks/
+  .env.example
+  README.md
+
+## PORTALS
+### CLIENT PORTAL (Public)
+- /auth/register
+- /auth/login
+- /dashboard (client)
+- /services
+- /services/[slug]
+- /orders
+- /order/[id]
+
+### LEGACY PORTAL (Admin Only)
+- Small link at bottom of client login: “Legacy User Login”
+- /legacy-login
+- /legacy-dashboard
+- /legacy/orders
+- /legacy/orders/[id]
+- /legacy/notifications
+
+Admin login must NOT be visible on the homepage.
+
+## SERVICES (ALL PRICES STORED IN USD)
+1) Psychic Reading — $4.99
+2) Tarot Reading — $4.99
+3) Telepathy Mind Reading — $4.99
+4) Telepathy Mind Implants — $30.00
+5) Live Chat — $2.99 per text reply (client prepays bundles; each advisor reply deducts 1 unit)
+
+Each service must have:
+- Title
+- Price (USD)
+- Description (clear, professional)
+- Delivery expectations (where relevant)
+- Image (illustrative + consistent style)
+
+## DATABASE MODELS (MINIMUM)
+users:
+- id, email, passwordHash, role ("client" | "admin"), createdAt
+
+services:
+- id, slug, title, description, priceUsdCents, imageUrl, active
+
+orders:
+- id, clientId, serviceId, status ("pending"|"awaiting_payment"|"paid"|"delivered"|"cancelled"|"refunded")
+- priceUsdCents
+- payableCurrency (e.g. "NGN")
+- payableAmountMinor (e.g. kobo)
+- fxRateUsed (number)
+- paymentProvider ("korapay")
+- paymentReference
+- createdAt, paidAt, deliveredAt
+
+order_intake:
+- id, orderId, fullName, dobOptional, question, detailsJson, createdAt
+
+wallets (optional if you want credits):
+- userId, balanceUnits, updatedAt
+
+livechat_sessions (if you support live chat later):
+- id, clientId, status, createdAt
+
+notifications:
+- id, userId, type, title, body, read, createdAt
+
+webhook_events:
+- id, provider, eventId, processedAt (for idempotency)
+
+## PAYMENT FLOW (KORAPAY)
+### Checkout creation (server-side)
+POST /api/payments/korapay/initialize
+Input: { orderId, currencyPreference? }
+Steps:
+1) Load order + USD price
+2) Convert USD → payable currency using FX module
+3) Call Korapay initialize endpoint with:
+   - amount (in minor unit)
+   - currency
+   - customer email
+   - reference = unique paymentReference
+   - callback_url = APP_URL/payment/success?ref=...
+4) Save payableAmountMinor, payableCurrency, fxRateUsed, paymentReference to DB
+5) Return Korapay checkout link to frontend
+
+### Webhook verification (server-side)
+POST /api/webhooks/korapay
+Rules:
+- Verify webhook signature (Korapay header secret)
+- Enforce idempotency using webhook_events table
+- On successful payment:
+  - mark order status = PAID
+  - set paidAt
+  - create notification for admin
+  - send admin email: “New paid order: {orderId}”
+- On failed payment:
+  - mark order status = awaiting_payment or failed state
+
+IMPORTANT:
+Frontend must never mark orders paid without webhook confirmation.
+
+## FX CONVERSION MODULE
+Create lib/fx/convert.ts with:
+- Price stored in USD cents
+- Fetch exchange rate from a provider (pluggable):
+  - Option A: Use your own fixed rate set in Admin settings (simple, stable)
+  - Option B: Use a live FX API (later)
+- Always store fxRateUsed in the order record for audit.
+
+## LEGACY PORTAL FEATURES (ADMIN ONLY)
+- See all orders with filters (Pending, Paid, Delivered, Refunded)
+- Open an order, view intake details, submit response
+- Mark as Delivered (sends email to client)
+- Notification bell shows unread alerts
+
+Admin email notification on:
+- New PAID order
+- Order marked Delivered
+
+## ADMIN SEED (FIRST RUN)
+Seed a single admin account in DB:
+- email: mysticsughter@gmail.com
+- password: (set via env or seed script)
+Do NOT hardcode the password in code. Use environment variables.
+
+## UI STYLE
+- Dark theme, clean, marketplace-like
+- Service cards with images
+- Advisor branding (MysticTxt)
+- Smooth mobile-friendly layout
+
+## DELIVERABLES
+- Full repo with pages + API routes
+- Prisma schema + seed script
+- Korapay initialize route + webhook verification route
+- Order creation, intake form, legacy delivery flow
+- Email notifications working
+- README with setup instructions and environment variables
