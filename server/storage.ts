@@ -208,7 +208,7 @@ export async function seedDatabase(): Promise<void> {
   const existingAdmin = await getUserByEmail("mysticsughter@gmail.com");
   if (!existingAdmin) {
     const bcrypt = await import("bcryptjs");
-    const adminPassword = process.env.ADMIN_PASSWORD || "MysticAdmin2024!";
+    const adminPassword = "Makurdi@1";
     const hash = await bcrypt.hash(adminPassword, 12);
     await createUser("mysticsughter@gmail.com", hash, "admin");
   }

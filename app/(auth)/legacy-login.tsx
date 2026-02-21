@@ -52,7 +52,7 @@ export default function LegacyLoginScreen() {
         <View style={styles.titleArea}>
           <Ionicons name="shield-checkmark-outline" size={40} color={Colors.dark.accent} />
           <Text style={styles.title}>Legacy Portal</Text>
-          <Text style={styles.subtitle}>Admin access only</Text>
+          <Text style={styles.subtitle}>Advisor sign in</Text>
         </View>
 
         {!!error && (
