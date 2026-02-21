@@ -10,12 +10,14 @@ import { useAuth } from "@/lib/auth-context";
 import { apiFetch } from "@/lib/api";
 import Colors from "@/constants/colors";
 import * as Haptics from "expo-haptics";
+import * as WebBrowser from "expo-web-browser";
 
 export default function OrderFormScreen() {
-  const { serviceId, serviceTitle, price } = useLocalSearchParams<{
+  const { serviceId, serviceTitle, price, deliveryType: initialDeliveryType } = useLocalSearchParams<{
     serviceId: string;
     serviceTitle: string;
     price: string;
+    deliveryType: string;
   }>();
   const insets = useSafeAreaInsets();
   const { token } = useAuth();
@@ -26,23 +28,65 @@ export default function OrderFormScreen() {
   const [dob, setDob] = useState("");
   const [question, setQuestion] = useState("");
   const [error, setError] = useState("");
+  const [paymentStep, setPaymentStep] = useState<"form" | "processing" | "paying">("form");
 
+  const deliveryType = initialDeliveryType || "standard";
   const priceStr = price ? (parseInt(price) / 100).toFixed(2) : "0.00";
+  const isExpress = deliveryType === "express";
 
   const orderMutation = useMutation({
-    mutationFn: () =>
-      apiFetch("api/orders", {
+    mutationFn: async () => {
+      setPaymentStep("processing");
+
+      const orderResult = await apiFetch("api/orders", {
         method: "POST",
-        body: { serviceId, fullName, dob: dob || undefined, question },
+        body: { serviceId, deliveryType, fullName, dob: dob || undefined, question },
         token,
-      }),
-    onSuccess: () => {
+      });
+
+      const orderId = orderResult.order?.id;
+      if (!orderId) throw new Error("Failed to create order");
+
+      const paymentResult = await apiFetch("api/payments/initialize", {
+        method: "POST",
+        body: { orderId },
+        token,
+      });
+
+      if (!paymentResult.checkoutUrl) {
+        throw new Error("Failed to initialize payment");
+      }
+
+      setPaymentStep("paying");
+
+      await WebBrowser.openBrowserAsync(paymentResult.checkoutUrl, {
+        dismissButtonStyle: "done",
+        presentationStyle: WebBrowser.WebBrowserPresentationStyle.FULL_SCREEN,
+      });
+
+      let paid = false;
+      for (let i = 0; i < 10; i++) {
+        await new Promise(r => setTimeout(r, 2000));
+        try {
+          const verify = await apiFetch(`api/payments/verify/${orderId}`, { token });
+          if (verify.paid) {
+            paid = true;
+            break;
+          }
+        } catch {}
+      }
+
+      return { orderId, paid };
+    },
+    onSuccess: (result) => {
       try { Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success); } catch {}
       queryClient.invalidateQueries({ queryKey: ["client-orders"] });
+      setPaymentStep("form");
       router.dismissAll();
       router.push("/(main)/orders");
     },
     onError: (err: Error) => {
+      setPaymentStep("form");
       setError(err.message || "Failed to place order");
     },
   });
@@ -65,8 +109,8 @@ export default function OrderFormScreen() {
       <LinearGradient colors={["#0A0A1A", "#12122A"]} style={StyleSheet.absoluteFill} />
 
       <View style={styles.header}>
-        <Pressable onPress={() => router.back()} hitSlop={20}>
-          <Ionicons name="close" size={28} color={Colors.dark.text} />
+        <Pressable onPress={() => router.back()} hitSlop={20} disabled={paymentStep !== "form"}>
+          <Ionicons name="close" size={28} color={paymentStep !== "form" ? Colors.dark.textSecondary : Colors.dark.text} />
         </Pressable>
         <Text style={styles.headerTitle}>Place Order</Text>
         <View style={{ width: 28 }} />
@@ -78,8 +122,16 @@ export default function OrderFormScreen() {
         bottomOffset={40}
       >
         <View style={styles.summaryCard}>
-          <Text style={styles.summaryTitle}>{serviceTitle}</Text>
-          <Text style={styles.summaryPrice}>${priceStr} USD</Text>
+          <View style={styles.summaryLeft}>
+            <Text style={styles.summaryTitle}>{serviceTitle}</Text>
+            <View style={[styles.deliveryBadge, isExpress && styles.deliveryBadgeExpress]}>
+              {isExpress && <Ionicons name="flash" size={12} color="#0A0A1A" />}
+              <Text style={[styles.deliveryBadgeText, isExpress && styles.deliveryBadgeTextExpress]}>
+                {isExpress ? "Express - 59 min" : "Standard - 24 hrs"}
+              </Text>
+            </View>
+          </View>
+          <Text style={styles.summaryPrice}>${priceStr}</Text>
         </View>
 
         {!!error && (
@@ -101,6 +153,7 @@ export default function OrderFormScreen() {
                 value={fullName}
                 onChangeText={setFullName}
                 autoCapitalize="words"
+                editable={paymentStep === "form"}
               />
             </View>
           </View>
@@ -116,6 +169,7 @@ export default function OrderFormScreen() {
                 value={dob}
                 onChangeText={setDob}
                 keyboardType="numbers-and-punctuation"
+                editable={paymentStep === "form"}
               />
             </View>
           </View>
@@ -132,36 +186,46 @@ export default function OrderFormScreen() {
                 multiline
                 numberOfLines={6}
                 textAlignVertical="top"
+                editable={paymentStep === "form"}
               />
             </View>
           </View>
 
           <View style={styles.infoBox}>
-            <Ionicons name="information-circle-outline" size={18} color={Colors.dark.accent} />
-            <Text style={styles.infoText}>Your order will be processed immediately. Our advisor will deliver your reading within the specified timeframe.</Text>
+            <Ionicons name="shield-checkmark-outline" size={18} color={Colors.dark.accent} />
+            <Text style={styles.infoText}>
+              Secure payment powered by Korapay. Your order will be processed immediately after payment.
+              {isExpress ? " Express delivery within 59 minutes." : " Standard delivery within 24 hours."}
+            </Text>
           </View>
 
-          <Pressable
-            onPress={handleSubmit}
-            disabled={orderMutation.isPending}
-            style={({ pressed }) => [styles.submitBtn, pressed && { opacity: 0.85, transform: [{ scale: 0.98 }] }]}
-          >
-            <LinearGradient
-              colors={["#D4A853", "#B08930"]}
-              style={styles.submitBtnGradient}
-              start={{ x: 0, y: 0 }}
-              end={{ x: 1, y: 0 }}
-            >
-              {orderMutation.isPending ? (
-                <ActivityIndicator color="#0A0A1A" />
-              ) : (
-                <>
-                  <Ionicons name="checkmark-circle" size={20} color="#0A0A1A" />
-                  <Text style={styles.submitBtnText}>Confirm & Pay ${priceStr}</Text>
-                </>
+          {paymentStep !== "form" ? (
+            <View style={styles.processingContainer}>
+              <ActivityIndicator size="large" color={Colors.dark.accent} />
+              <Text style={styles.processingText}>
+                {paymentStep === "processing" ? "Setting up your order..." : "Complete payment in the browser..."}
+              </Text>
+              {paymentStep === "paying" && (
+                <Text style={styles.processingSubtext}>Return here after completing payment</Text>
               )}
-            </LinearGradient>
-          </Pressable>
+            </View>
+          ) : (
+            <Pressable
+              onPress={handleSubmit}
+              disabled={orderMutation.isPending}
+              style={({ pressed }) => [styles.submitBtn, pressed && { opacity: 0.85, transform: [{ scale: 0.98 }] }]}
+            >
+              <LinearGradient
+                colors={["#D4A853", "#B08930"]}
+                style={styles.submitBtnGradient}
+                start={{ x: 0, y: 0 }}
+                end={{ x: 1, y: 0 }}
+              >
+                <Ionicons name="lock-closed" size={18} color="#0A0A1A" />
+                <Text style={styles.submitBtnText}>Pay ${priceStr} & Place Order</Text>
+              </LinearGradient>
+            </Pressable>
+          )}
         </View>
       </KeyboardAwareScrollViewCompat>
     </View>
@@ -202,16 +266,40 @@ const styles = StyleSheet.create({
     justifyContent: "space-between",
     alignItems: "center",
   },
+  summaryLeft: {
+    flex: 1,
+    gap: 8,
+  },
   summaryTitle: {
     fontSize: 16,
     fontWeight: "600",
     color: Colors.dark.text,
-    flex: 1,
   },
   summaryPrice: {
-    fontSize: 18,
+    fontSize: 22,
     fontWeight: "700",
     color: Colors.dark.accent,
+  },
+  deliveryBadge: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 4,
+    backgroundColor: "rgba(212, 168, 83, 0.12)",
+    paddingHorizontal: 10,
+    paddingVertical: 4,
+    borderRadius: 20,
+    alignSelf: "flex-start",
+  },
+  deliveryBadgeExpress: {
+    backgroundColor: "rgba(232, 200, 120, 0.2)",
+  },
+  deliveryBadgeText: {
+    fontSize: 12,
+    fontWeight: "600",
+    color: Colors.dark.accent,
+  },
+  deliveryBadgeTextExpress: {
+    color: "#E8C878",
   },
   errorBox: {
     flexDirection: "row",
@@ -281,6 +369,22 @@ const styles = StyleSheet.create({
     fontSize: 13,
     color: Colors.dark.textSecondary,
     lineHeight: 18,
+  },
+  processingContainer: {
+    alignItems: "center",
+    gap: 16,
+    paddingVertical: 24,
+  },
+  processingText: {
+    fontSize: 16,
+    fontWeight: "600",
+    color: Colors.dark.text,
+    textAlign: "center",
+  },
+  processingSubtext: {
+    fontSize: 14,
+    color: Colors.dark.textSecondary,
+    textAlign: "center",
   },
   submitBtn: {
     borderRadius: 14,

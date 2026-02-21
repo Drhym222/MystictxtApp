@@ -29,8 +29,6 @@ const SERVICE_COLORS: Record<string, [string, string]> = {
 function ServiceCard({ service }: { service: Service }) {
   const iconName = SERVICE_ICONS[service.slug] || "star-outline";
   const colors = SERVICE_COLORS[service.slug] || ["#2C3E50", "#1A252F"];
-  const priceStr = (service.priceUsdCents / 100).toFixed(2);
-
   return (
     <Pressable
       onPress={() => router.push({ pathname: "/service/[slug]", params: { slug: service.slug } })}
@@ -49,7 +47,7 @@ function ServiceCard({ service }: { service: Service }) {
           <Text style={styles.cardTitle}>{service.title}</Text>
           <Text style={styles.cardDesc} numberOfLines={2}>{service.description}</Text>
           <View style={styles.cardFooter}>
-            <Text style={styles.cardPrice}>${priceStr}</Text>
+            <Text style={styles.cardPrice}>From $4.99</Text>
             <View style={styles.cardArrow}>
               <Ionicons name="arrow-forward" size={16} color={Colors.dark.accent} />
             </View>

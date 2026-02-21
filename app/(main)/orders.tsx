@@ -38,7 +38,15 @@ function OrderCard({ order }: { order: any }) {
         </View>
       </View>
       <View style={styles.orderFooter}>
-        <Text style={styles.orderPrice}>${(order.priceUsdCents / 100).toFixed(2)}</Text>
+        <View style={styles.orderFooterLeft}>
+          <Text style={styles.orderPrice}>${(order.priceUsdCents / 100).toFixed(2)}</Text>
+          <View style={[styles.deliveryBadge, order.deliveryType === "express" && styles.deliveryBadgeExpress]}>
+            {order.deliveryType === "express" && <Ionicons name="flash" size={10} color="#0A0A1A" />}
+            <Text style={[styles.deliveryBadgeText, order.deliveryType === "express" && styles.deliveryBadgeTextExpress]}>
+              {order.deliveryType === "express" ? "Express" : "Standard"}
+            </Text>
+          </View>
+        </View>
         <Text style={styles.orderId}>#{order.id.slice(0, 8)}</Text>
       </View>
     </Pressable>
@@ -168,10 +176,35 @@ const styles = StyleSheet.create({
     justifyContent: "space-between",
     alignItems: "center",
   },
+  orderFooterLeft: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 8,
+  },
   orderPrice: {
     fontSize: 18,
     fontWeight: "700",
     color: Colors.dark.accent,
+  },
+  deliveryBadge: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 3,
+    backgroundColor: "rgba(212, 168, 83, 0.12)",
+    paddingHorizontal: 8,
+    paddingVertical: 3,
+    borderRadius: 12,
+  },
+  deliveryBadgeExpress: {
+    backgroundColor: "rgba(232, 200, 120, 0.2)",
+  },
+  deliveryBadgeText: {
+    fontSize: 10,
+    fontWeight: "700",
+    color: Colors.dark.accent,
+  },
+  deliveryBadgeTextExpress: {
+    color: "#E8C878",
   },
   orderId: {
     fontSize: 12,
