@@ -72,3 +72,8 @@ task = "shell.exec"
 args = "npm run expo:dev"
 waitForPort = 8081
 ensurePreviewReachable = "/status"
+
+[userenv]
+
+[userenv.production]
+EXPO_PUBLIC_DOMAIN = "mystic-text-portals.replit.app"

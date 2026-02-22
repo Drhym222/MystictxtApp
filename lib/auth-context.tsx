@@ -4,6 +4,7 @@ import { Platform } from 'react-native';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { getApiUrl } from './query-client';
 import { fetch } from 'expo/fetch';
+import Constants from 'expo-constants';
 
 interface AuthUser {
   id: string;
@@ -58,10 +59,11 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
   function getDebugInfo(): string {
     try {
-      const domain = process.env.EXPO_PUBLIC_DOMAIN || '(not set)';
+      const envDomain = process.env.EXPO_PUBLIC_DOMAIN || '(not set)';
+      const extraDomain = Constants.expoConfig?.extra?.EXPO_PUBLIC_DOMAIN || '(not set)';
       let apiUrl = '(error getting URL)';
       try { apiUrl = getApiUrl(); } catch (e: any) { apiUrl = `Error: ${e.message}`; }
-      return `Platform: ${Platform.OS} | Domain: ${domain} | API: ${apiUrl}`;
+      return `Platform: ${Platform.OS} | env: ${envDomain} | extra: ${extraDomain} | API: ${apiUrl}`;
     } catch (e: any) {
       return `Debug error: ${e.message}`;
     }

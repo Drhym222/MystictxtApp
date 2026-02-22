@@ -1,15 +1,18 @@
 import { fetch } from "expo/fetch";
 import { QueryClient, QueryFunction } from "@tanstack/react-query";
+import Constants from "expo-constants";
 
-/**
- * Gets the base URL for the Express API server (e.g., "http://localhost:3000")
- * @returns {string} The API base URL
- */
+const FALLBACK_DOMAIN = "mystic-text-portals.replit.app";
+
 export function getApiUrl(): string {
   let host = process.env.EXPO_PUBLIC_DOMAIN;
 
   if (!host) {
-    throw new Error("EXPO_PUBLIC_DOMAIN is not set");
+    host = Constants.expoConfig?.extra?.EXPO_PUBLIC_DOMAIN;
+  }
+
+  if (!host) {
+    host = FALLBACK_DOMAIN;
   }
 
   let url = new URL(`https://${host}`);
