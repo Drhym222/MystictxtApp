@@ -25,7 +25,12 @@ export async function apiFetch(route: string, options: {
 
   if (!res.ok) {
     const text = await res.text();
-    throw new Error(text || `Request failed: ${res.status}`);
+    let msg = `Request failed: ${res.status}`;
+    try {
+      const parsed = JSON.parse(text);
+      if (parsed.message) msg = parsed.message;
+    } catch {}
+    throw new Error(msg);
   }
 
   return res.json();
