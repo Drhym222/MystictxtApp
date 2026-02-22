@@ -253,7 +253,11 @@ export async function registerRoutes(app: Express): Promise<Server> {
         return res.status(500).json({ message: "Payment not configured" });
       }
 
-      const baseUrl = `https://${process.env.REPLIT_DEV_DOMAIN || req.get('host')}`;
+      const host = process.env.REPLIT_DEV_DOMAIN || process.env.REPL_SLUG && `${process.env.REPL_SLUG}.${process.env.REPL_OWNER}.repl.co` || req.get('host') || 'mystic-text-portals.replit.app';
+      const baseUrl = `https://${host}`;
+
+      const exchangeRate = 1580;
+      const amountNgn = Math.ceil(amountUsd * exchangeRate);
 
       const response = await globalThis.fetch("https://api.korapay.com/merchant/api/v1/charges/initialize", {
         method: "POST",
@@ -263,8 +267,8 @@ export async function registerRoutes(app: Express): Promise<Server> {
         },
         body: JSON.stringify({
           reference,
-          amount: amountUsd,
-          currency: "USD",
+          amount: amountNgn,
+          currency: "NGN",
           redirect_url: `${baseUrl}/api/payments/callback`,
           customer: {
             name: user.email.split("@")[0],
@@ -278,8 +282,9 @@ export async function registerRoutes(app: Express): Promise<Server> {
       const data = await response.json();
       
       if (!data.status) {
-        console.error("Korapay init error:", data);
-        return res.status(500).json({ message: "Failed to initialize payment" });
+        console.error("Korapay init error:", JSON.stringify(data));
+        const errorMsg = data.message || "Payment provider error. Please try again.";
+        return res.status(500).json({ message: errorMsg });
       }
 
       res.json({
