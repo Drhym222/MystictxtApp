@@ -4,7 +4,6 @@ import { Platform } from 'react-native';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { getApiUrl } from './query-client';
 import { fetch } from 'expo/fetch';
-import Constants from 'expo-constants';
 
 interface AuthUser {
   id: string;
@@ -19,7 +18,6 @@ interface AuthContextValue {
   login: (email: string, password: string) => Promise<{ success: boolean; error?: string }>;
   register: (email: string, password: string) => Promise<{ success: boolean; error?: string }>;
   logout: () => Promise<void>;
-  getDebugInfo: () => string;
 }
 
 const AuthContext = createContext<AuthContextValue | null>(null);
@@ -56,18 +54,6 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   useEffect(() => {
     loadStoredAuth();
   }, []);
-
-  function getDebugInfo(): string {
-    try {
-      const envDomain = process.env.EXPO_PUBLIC_DOMAIN || '(not set)';
-      const extraDomain = Constants.expoConfig?.extra?.EXPO_PUBLIC_DOMAIN || '(not set)';
-      let apiUrl = '(error getting URL)';
-      try { apiUrl = getApiUrl(); } catch (e: any) { apiUrl = `Error: ${e.message}`; }
-      return `Platform: ${Platform.OS} | env: ${envDomain} | extra: ${extraDomain} | API: ${apiUrl}`;
-    } catch (e: any) {
-      return `Debug error: ${e.message}`;
-    }
-  }
 
   async function loadStoredAuth() {
     try {
@@ -206,7 +192,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   }
 
   const value = useMemo(() => ({
-    user, token, isLoading, login, register, logout, getDebugInfo,
+    user, token, isLoading, login, register, logout,
   }), [user, token, isLoading]);
 
   return (
