@@ -10,12 +10,13 @@ import Colors from "@/constants/colors";
 
 export default function RegisterScreen() {
   const insets = useSafeAreaInsets();
-  const { register } = useAuth();
+  const { register, getDebugInfo } = useAuth();
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [confirmPassword, setConfirmPassword] = useState("");
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
+  const [debugInfo, setDebugInfo] = useState("");
   const topPadding = Platform.OS === "web" ? 67 : insets.top;
 
   async function handleRegister() {
@@ -33,6 +34,7 @@ export default function RegisterScreen() {
     }
     setLoading(true);
     setError("");
+    setDebugInfo(getDebugInfo());
     const result = await register(email.trim().toLowerCase(), password);
     setLoading(false);
     if (result.success) {
@@ -66,7 +68,13 @@ export default function RegisterScreen() {
         {!!error && (
           <View style={styles.errorBox}>
             <Ionicons name="alert-circle" size={16} color={Colors.dark.error} />
-            <Text style={styles.errorText}>{error}</Text>
+            <Text style={styles.errorText} selectable>{error}</Text>
+          </View>
+        )}
+
+        {!!debugInfo && (
+          <View style={styles.debugBox}>
+            <Text style={styles.debugText} selectable>{debugInfo}</Text>
           </View>
         )}
 
@@ -242,6 +250,18 @@ const styles = StyleSheet.create({
   btnPressed: {
     opacity: 0.85,
     transform: [{ scale: 0.98 }],
+  },
+  debugBox: {
+    backgroundColor: "rgba(52, 152, 219, 0.1)",
+    padding: 10,
+    borderRadius: 8,
+    borderWidth: 1,
+    borderColor: "rgba(52, 152, 219, 0.3)",
+  },
+  debugText: {
+    color: "#3498DB",
+    fontSize: 11,
+    fontFamily: Platform.select({ ios: "Menlo", default: "monospace" }),
   },
   footer: {
     flexDirection: "row",
