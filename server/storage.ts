@@ -190,10 +190,10 @@ export async function seedDatabase(): Promise<void> {
       priceUsdCents: 499,
     },
     {
-      slug: "telepathy-mind-implants",
-      title: "Telepathy Mind Implants",
-      description: "Harness the power of focused intention through telepathic mind implants. Our specialist channels specific thoughts and positive affirmations toward your target, creating subtle but powerful shifts in consciousness.",
-      priceUsdCents: 499,
+      slug: "find-lost-items",
+      title: "Find Lost/Missing Items",
+      description: "Have you lost something precious? Our gifted advisor uses psychic abilities to help locate lost or missing items, pets, and even people. Through deep intuitive connection, we can sense the energy of what you seek and guide you toward finding it.",
+      priceUsdCents: 8999,
     },
     {
       slug: "live-chat",
