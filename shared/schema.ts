@@ -79,6 +79,7 @@ export const createOrderSchema = z.object({
   dob: z.string().optional(),
   question: z.string().min(1),
   details: z.any().optional(),
+  chatMinutes: z.number().optional(),
 });
 
 export type User = typeof users.$inferSelect;

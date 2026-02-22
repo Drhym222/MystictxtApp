@@ -198,8 +198,8 @@ export async function seedDatabase(): Promise<void> {
     {
       slug: "live-chat",
       title: "Live Chat",
-      description: "Connect with our mystic advisor in real-time through text. Ask your burning questions and receive immediate guidance. Each bundle includes multiple text replies for an in-depth conversation.",
-      priceUsdCents: 499,
+      description: "Connect with our mystic advisor in real-time through live text chat. Purchase session time and get instant guidance as the advisor accepts your connection. Timer starts only when the advisor is active — ask unlimited questions within your session.",
+      priceUsdCents: 399,
     },
   ];
 

@@ -128,18 +128,24 @@ export async function registerRoutes(app: Express): Promise<Server> {
       if (!parsed.success) {
         return res.status(400).json({ message: "Invalid input", errors: parsed.error.flatten() });
       }
-      const { serviceId, deliveryType, fullName, dob, question, details } = parsed.data;
+      const { serviceId, deliveryType, fullName, dob, question, details, chatMinutes } = parsed.data;
       const service = await getServiceById(serviceId);
       if (!service) return res.status(404).json({ message: "Service not found" });
 
-      const priceUsdCents = deliveryType === "express" ? 1499 : 499;
+      let basePriceCents = service.priceUsdCents;
+      if (service.slug === "live-chat" && chatMinutes) {
+        basePriceCents = Math.ceil(chatMinutes * (399 / 5));
+      }
+      const expressSurcharge = 1000;
+      const priceUsdCents = deliveryType === "express" ? basePriceCents + expressSurcharge : basePriceCents;
 
+      const orderDetails = { ...details, chatMinutes: chatMinutes || undefined };
       const result = await createOrder(
         (req as any).userId,
         serviceId,
         priceUsdCents,
         deliveryType || "standard",
-        { fullName, dob, question, details }
+        { fullName, dob, question, details: orderDetails }
       );
       res.json(result);
     } catch (err) {

@@ -13,11 +13,12 @@ import * as Haptics from "expo-haptics";
 import * as WebBrowser from "expo-web-browser";
 
 export default function OrderFormScreen() {
-  const { serviceId, serviceTitle, price, deliveryType: initialDeliveryType } = useLocalSearchParams<{
+  const { serviceId, serviceTitle, price, deliveryType: initialDeliveryType, chatMinutes: chatMinutesParam } = useLocalSearchParams<{
     serviceId: string;
     serviceTitle: string;
     price: string;
     deliveryType: string;
+    chatMinutes: string;
   }>();
   const insets = useSafeAreaInsets();
   const { token } = useAuth();
@@ -33,14 +34,17 @@ export default function OrderFormScreen() {
   const deliveryType = initialDeliveryType || "standard";
   const priceStr = price ? (parseInt(price) / 100).toFixed(2) : "0.00";
   const isExpress = deliveryType === "express";
+  const isLiveChat = !!chatMinutesParam;
 
   const orderMutation = useMutation({
     mutationFn: async () => {
       setPaymentStep("processing");
 
+      const orderBody: any = { serviceId, deliveryType, fullName, dob: dob || undefined, question };
+      if (chatMinutesParam) orderBody.chatMinutes = parseInt(chatMinutesParam);
       const orderResult = await apiFetch("api/orders", {
         method: "POST",
-        body: { serviceId, deliveryType, fullName, dob: dob || undefined, question },
+        body: orderBody,
         token,
       });
 
@@ -126,8 +130,9 @@ export default function OrderFormScreen() {
             <Text style={styles.summaryTitle}>{serviceTitle}</Text>
             <View style={[styles.deliveryBadge, isExpress && styles.deliveryBadgeExpress]}>
               {isExpress && <Ionicons name="flash" size={12} color="#0A0A1A" />}
+              {isLiveChat && <Ionicons name="time-outline" size={12} color={Colors.dark.accent} />}
               <Text style={[styles.deliveryBadgeText, isExpress && styles.deliveryBadgeTextExpress]}>
-                {isExpress ? "Express - 59 min" : "Standard - 24 hrs"}
+                {isLiveChat ? `${chatMinutesParam} min session` : isExpress ? "Express - 59 min" : "Standard - 24 hrs"}
               </Text>
             </View>
           </View>
