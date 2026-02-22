@@ -14,7 +14,7 @@ const SERVICE_ICONS: Record<string, string> = {
   "psychic-reading": "eye-outline",
   "tarot-reading": "grid-outline",
   "telepathy-mind-reading": "radio-outline",
-  "telepathy-mind-implants": "pulse-outline",
+  "find-lost-items": "search-outline",
   "live-chat": "chatbubbles-outline",
 };
 
@@ -22,7 +22,7 @@ const SERVICE_COLORS: Record<string, [string, string]> = {
   "psychic-reading": ["#6C3483", "#4A235A"],
   "tarot-reading": ["#1A5276", "#154360"],
   "telepathy-mind-reading": ["#1E8449", "#145A32"],
-  "telepathy-mind-implants": ["#B7950B", "#7D6608"],
+  "find-lost-items": ["#B7950B", "#7D6608"],
   "live-chat": ["#C0392B", "#922B21"],
 };
 
@@ -47,7 +47,9 @@ function ServiceCard({ service }: { service: Service }) {
           <Text style={styles.cardTitle}>{service.title}</Text>
           <Text style={styles.cardDesc} numberOfLines={2}>{service.description}</Text>
           <View style={styles.cardFooter}>
-            <Text style={styles.cardPrice}>From $4.99</Text>
+            <Text style={styles.cardPrice}>
+              {service.slug === "live-chat" ? "From $3.99/5min" : `From $${(service.priceUsdCents / 100).toFixed(2)}`}
+            </Text>
             <View style={styles.cardArrow}>
               <Ionicons name="arrow-forward" size={16} color={Colors.dark.accent} />
             </View>
