@@ -43,6 +43,9 @@
     "experiments": {
       "typedRoutes": true,
       "reactCompiler": true
+    },
+    "extra": {
+      "EXPO_PUBLIC_DOMAIN": "mystic-text-portals.replit.app"
     }
   }
 }

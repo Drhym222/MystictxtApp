@@ -1,0 +1,28 @@
+{
+  "cli": {
+    "version": ">= 3.0.0"
+  },
+  "build": {
+    "development": {
+      "developmentClient": true,
+      "distribution": "internal",
+      "env": {
+        "EXPO_PUBLIC_DOMAIN": "mystic-text-portals.replit.app"
+      }
+    },
+    "preview": {
+      "distribution": "internal",
+      "env": {
+        "EXPO_PUBLIC_DOMAIN": "mystic-text-portals.replit.app"
+      }
+    },
+    "production": {
+      "env": {
+        "EXPO_PUBLIC_DOMAIN": "mystic-text-portals.replit.app"
+      }
+    }
+  },
+  "submit": {
+    "production": {}
+  }
+}
