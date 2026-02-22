@@ -8,7 +8,8 @@ import {
   getNotifications, getUnreadNotificationCount, markNotificationRead,
   markAllNotificationsRead, seedDatabase, updateOrderPayment,
 } from "./storage";
-import { registerSchema, loginSchema, createOrderSchema } from "@shared/schema";
+import { registerSchema, loginSchema, createOrderSchema, orders } from "@shared/schema";
+import { db } from "./db";
 
 const JWT_SECRET = process.env.SESSION_SECRET || "mystic-secret-key-change-me";
 
@@ -252,7 +253,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
       if (!user) return res.status(404).json({ message: "User not found" });
 
       const amountUsd = order.priceUsdCents / 100;
-      const reference = `MYSTIC-${order.id}-${Date.now()}`;
+      const reference = `MYS-${order.id.slice(0, 8)}-${Date.now().toString(36)}`;
       
       const korapaySecret = process.env.KORAPAY_SECRET_KEY;
       if (!korapaySecret) {
@@ -311,11 +312,15 @@ export async function registerRoutes(app: Express): Promise<Server> {
       if (event === "charge.success" && data) {
         const ref = data.reference || data.payment_reference;
         if (ref) {
-          const orderIdMatch = ref.match(/MYSTIC-([^-]+)-/);
+          const orderIdMatch = ref.match(/MYS(?:TIC)?-([^-]+)-/);
           if (orderIdMatch) {
-            const orderId = orderIdMatch[1];
-            await updateOrderPayment(orderId, ref);
-            console.log("Order paid via webhook:", orderId);
+            const partialId = orderIdMatch[1];
+            const allOrders = await db.select().from(orders);
+            const matchedOrder = allOrders.find(o => o.id.startsWith(partialId));
+            if (matchedOrder) {
+              await updateOrderPayment(matchedOrder.id, ref);
+              console.log("Order paid via webhook:", matchedOrder.id);
+            }
           }
         }
       }
@@ -331,9 +336,12 @@ export async function registerRoutes(app: Express): Promise<Server> {
     try {
       const reference = req.query.reference as string;
       if (reference) {
-        const orderIdMatch = reference.match(/MYSTIC-([^-]+)-/);
+        const orderIdMatch = reference.match(/MYS(?:TIC)?-([^-]+)-/);
         if (orderIdMatch) {
-          const orderId = orderIdMatch[1];
+          const partialId = orderIdMatch[1];
+          const allOrders = await db.select().from(orders);
+          const matchedOrder = allOrders.find(o => o.id.startsWith(partialId));
+          const orderId = matchedOrder?.id || partialId;
           
           const korapaySecret = process.env.KORAPAY_SECRET_KEY;
           if (korapaySecret) {

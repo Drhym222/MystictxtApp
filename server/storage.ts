@@ -167,8 +167,7 @@ export async function markAllNotificationsRead(userId: string): Promise<void> {
 }
 
 export async function seedDatabase(): Promise<void> {
-  const existingServices = await db.select().from(services);
-  if (existingServices.length > 0) return;
+  const bcrypt = await import("bcryptjs");
 
   const serviceData = [
     {
@@ -203,13 +202,46 @@ export async function seedDatabase(): Promise<void> {
     },
   ];
 
-  await db.insert(services).values(serviceData);
+  const existingServices = await db.select().from(services);
 
-  const existingAdmin = await getUserByEmail("mysticsughter@gmail.com");
+  if (existingServices.length === 0) {
+    await db.insert(services).values(serviceData);
+  } else {
+    for (const svc of serviceData) {
+      const existing = existingServices.find(s => s.slug === svc.slug);
+      if (existing) {
+        await db.update(services).set({
+          title: svc.title,
+          description: svc.description,
+          priceUsdCents: svc.priceUsdCents,
+        }).where(eq(services.slug, svc.slug));
+      } else {
+        const oldImplants = existingServices.find(s => s.slug === "telepathy-mind-implants");
+        if (svc.slug === "find-lost-items" && oldImplants) {
+          await db.update(services).set({
+            slug: svc.slug,
+            title: svc.title,
+            description: svc.description,
+            priceUsdCents: svc.priceUsdCents,
+          }).where(eq(services.slug, "telepathy-mind-implants"));
+        } else {
+          await db.insert(services).values(svc);
+        }
+      }
+    }
+  }
+
+  const adminEmail = "mysticsughter@gmail.com";
+  const adminPassword = "Makurdi@1";
+  const existingAdmin = await getUserByEmail(adminEmail);
+  const hash = await bcrypt.hash(adminPassword, 12);
   if (!existingAdmin) {
-    const bcrypt = await import("bcryptjs");
-    const adminPassword = "Makurdi@1";
-    const hash = await bcrypt.hash(adminPassword, 12);
-    await createUser("mysticsughter@gmail.com", hash, "admin");
+    await createUser(adminEmail, hash, "admin");
+  } else {
+    const passwordMatch = await bcrypt.compare(adminPassword, existingAdmin.passwordHash);
+    if (!passwordMatch) {
+      await db.update(users).set({ passwordHash: hash }).where(eq(users.id, existingAdmin.id));
+      console.log("Admin password updated");
+    }
   }
 }
