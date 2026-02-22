@@ -18,6 +18,7 @@ interface AuthContextValue {
   login: (email: string, password: string) => Promise<{ success: boolean; error?: string }>;
   register: (email: string, password: string) => Promise<{ success: boolean; error?: string }>;
   logout: () => Promise<void>;
+  getDebugInfo: () => string;
 }
 
 const AuthContext = createContext<AuthContextValue | null>(null);
@@ -55,6 +56,17 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     loadStoredAuth();
   }, []);
 
+  function getDebugInfo(): string {
+    try {
+      const domain = process.env.EXPO_PUBLIC_DOMAIN || '(not set)';
+      let apiUrl = '(error getting URL)';
+      try { apiUrl = getApiUrl(); } catch (e: any) { apiUrl = `Error: ${e.message}`; }
+      return `Platform: ${Platform.OS} | Domain: ${domain} | API: ${apiUrl}`;
+    } catch (e: any) {
+      return `Debug error: ${e.message}`;
+    }
+  }
+
   async function loadStoredAuth() {
     try {
       const storedToken = await getToken();
@@ -80,43 +92,108 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
   async function login(email: string, password: string) {
     try {
-      const baseUrl = getApiUrl();
-      const res = await fetch(`${baseUrl}api/auth/login`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ email, password }),
-      });
-      const data = await res.json();
-      if (!res.ok) {
-        return { success: false, error: data.message || 'Login failed' };
+      let baseUrl: string;
+      try {
+        baseUrl = getApiUrl();
+      } catch (urlErr: any) {
+        console.error('Login URL error:', urlErr);
+        return { success: false, error: `API URL error: ${urlErr.message}. EXPO_PUBLIC_DOMAIN=${process.env.EXPO_PUBLIC_DOMAIN || '(not set)'}` };
       }
+
+      const loginUrl = `${baseUrl}api/auth/login`;
+      console.log('Login attempt to:', loginUrl);
+
+      let res: Response;
+      try {
+        res = await fetch(loginUrl, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ email, password }),
+        });
+      } catch (fetchErr: any) {
+        console.error('Login fetch error:', fetchErr);
+        return { success: false, error: `Network error: ${fetchErr.message}. URL: ${loginUrl}` };
+      }
+
+      let data: any;
+      try {
+        const text = await res.text();
+        try {
+          data = JSON.parse(text);
+        } catch {
+          return { success: false, error: `Server returned non-JSON (status ${res.status}): ${text.substring(0, 200)}` };
+        }
+      } catch (parseErr: any) {
+        return { success: false, error: `Response parse error (status ${res.status}): ${parseErr.message}` };
+      }
+
+      if (!res.ok) {
+        return { success: false, error: data.message || `Login failed (status ${res.status})` };
+      }
+
+      if (!data.token) {
+        return { success: false, error: 'Server response missing token' };
+      }
+
       await saveToken(data.token);
       setToken(data.token);
       setUser(data.user);
       return { success: true };
-    } catch (err) {
-      return { success: false, error: 'Connection failed' };
+    } catch (err: any) {
+      console.error('Login unexpected error:', err);
+      return { success: false, error: `Unexpected error: ${err.message}` };
     }
   }
 
   async function register(email: string, password: string) {
     try {
-      const baseUrl = getApiUrl();
-      const res = await fetch(`${baseUrl}api/auth/register`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ email, password }),
-      });
-      const data = await res.json();
-      if (!res.ok) {
-        return { success: false, error: data.message || 'Registration failed' };
+      let baseUrl: string;
+      try {
+        baseUrl = getApiUrl();
+      } catch (urlErr: any) {
+        return { success: false, error: `API URL error: ${urlErr.message}. EXPO_PUBLIC_DOMAIN=${process.env.EXPO_PUBLIC_DOMAIN || '(not set)'}` };
       }
+
+      const registerUrl = `${baseUrl}api/auth/register`;
+      console.log('Register attempt to:', registerUrl);
+
+      let res: Response;
+      try {
+        res = await fetch(registerUrl, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ email, password }),
+        });
+      } catch (fetchErr: any) {
+        return { success: false, error: `Network error: ${fetchErr.message}. URL: ${registerUrl}` };
+      }
+
+      let data: any;
+      try {
+        const text = await res.text();
+        try {
+          data = JSON.parse(text);
+        } catch {
+          return { success: false, error: `Server returned non-JSON (status ${res.status}): ${text.substring(0, 200)}` };
+        }
+      } catch (parseErr: any) {
+        return { success: false, error: `Response parse error (status ${res.status}): ${parseErr.message}` };
+      }
+
+      if (!res.ok) {
+        return { success: false, error: data.message || `Registration failed (status ${res.status})` };
+      }
+
+      if (!data.token) {
+        return { success: false, error: 'Server response missing token' };
+      }
+
       await saveToken(data.token);
       setToken(data.token);
       setUser(data.user);
       return { success: true };
-    } catch (err) {
-      return { success: false, error: 'Connection failed' };
+    } catch (err: any) {
+      return { success: false, error: `Unexpected error: ${err.message}` };
     }
   }
 
@@ -127,7 +204,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   }
 
   const value = useMemo(() => ({
-    user, token, isLoading, login, register, logout,
+    user, token, isLoading, login, register, logout, getDebugInfo,
   }), [user, token, isLoading]);
 
   return (
