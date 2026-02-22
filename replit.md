@@ -67,9 +67,11 @@ Preferred communication style: Simple, everyday language.
 
 ### Pricing Model
 
-- Services are listed and stored in USD cents
-- Two delivery tiers: Standard ($4.99) and Express ($14.99)
-- At checkout, backend converts USD to local currency (NGN) for Korapay payment processing
+- Services are listed and stored in USD cents (each service has its own base price)
+- Two delivery tiers: Standard (base price) and Express (base price + $10.00 surcharge)
+- **Service prices**: Psychic Reading $4.99, Tarot Reading $4.99, Telepathy Mind Reading $4.99, Find Lost/Missing Items $89.99, Live Chat $3.99/5min (time-based)
+- **Live Chat**: Time-based pricing at $0.80/min ($3.99/5min, $7.99/10min, $11.99/15min, $19.99/30min, $35.99/60min, custom minutes)
+- At checkout, backend converts USD to NGN (rate ~1580) for Korapay payment processing
 
 ### Payment Integration (Korapay)
 
