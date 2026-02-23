@@ -1,8 +1,8 @@
-import { eq, desc, and } from "drizzle-orm";
+import { eq, desc, and, ne } from "drizzle-orm";
 import { db } from "./db";
 import {
-  users, services, orders, orderIntake, notifications,
-  type User, type Service, type Order, type OrderIntake, type Notification,
+  users, services, orders, orderIntake, notifications, adminSettings, chatSessions, chatMessages,
+  type User, type Service, type Order, type OrderIntake, type Notification, type ChatSession, type ChatMessage,
 } from "@shared/schema";
 
 export async function getUserById(id: string): Promise<User | undefined> {
@@ -68,16 +68,38 @@ export async function updateOrderPayment(orderId: string, paymentReference: stri
   }).where(eq(orders.id, orderId)).returning();
   
   if (order) {
+    const [service] = await db.select().from(services).where(eq(services.id, order.serviceId));
     const adminUsers = await db.select().from(users).where(eq(users.role, "admin"));
     const [intake] = await db.select().from(orderIntake).where(eq(orderIntake.orderId, orderId));
-    for (const admin of adminUsers) {
-      await db.insert(notifications).values({
-        userId: admin.id,
-        type: "new_order",
-        title: "New Order Received",
-        body: `New paid order #${order.id.slice(0, 8)} from ${intake?.fullName || 'a client'}`,
+
+    if (service?.slug === "live-chat") {
+      const chatMinutes = (intake?.detailsJson as any)?.chatMinutes || 5;
+      const [session] = await db.insert(chatSessions).values({
         orderId: order.id,
-      });
+        clientId: order.clientId,
+        purchasedMinutes: chatMinutes,
+        status: "ringing",
+      }).returning();
+
+      for (const admin of adminUsers) {
+        await db.insert(notifications).values({
+          userId: admin.id,
+          type: "live_chat_ringing",
+          title: "Incoming Live Chat",
+          body: `${intake?.fullName || 'A client'} is requesting a ${chatMinutes}-minute live chat session!`,
+          orderId: order.id,
+        });
+      }
+    } else {
+      for (const admin of adminUsers) {
+        await db.insert(notifications).values({
+          userId: admin.id,
+          type: "new_order",
+          title: "New Order Received",
+          body: `New paid order #${order.id.slice(0, 8)} from ${intake?.fullName || 'a client'}`,
+          orderId: order.id,
+        });
+      }
     }
   }
   
@@ -99,8 +121,6 @@ export async function getClientOrders(clientId: string): Promise<(Order & { serv
 }
 
 export async function getAllOrders(statusFilter?: string): Promise<(Order & { service: Service; intake: OrderIntake | null; client: { email: string } })[]> {
-  let query = db.select().from(orders).orderBy(desc(orders.createdAt));
-
   const result = statusFilter
     ? await db.select().from(orders).where(eq(orders.status, statusFilter)).orderBy(desc(orders.createdAt))
     : await db.select().from(orders).orderBy(desc(orders.createdAt));
@@ -164,6 +184,102 @@ export async function markNotificationRead(notificationId: string): Promise<void
 
 export async function markAllNotificationsRead(userId: string): Promise<void> {
   await db.update(notifications).set({ read: true }).where(eq(notifications.userId, userId));
+}
+
+export async function getAdminSetting(key: string): Promise<string | null> {
+  const [setting] = await db.select().from(adminSettings).where(eq(adminSettings.key, key));
+  return setting?.value || null;
+}
+
+export async function setAdminSetting(key: string, value: string): Promise<void> {
+  const [existing] = await db.select().from(adminSettings).where(eq(adminSettings.key, key));
+  if (existing) {
+    await db.update(adminSettings).set({ value, updatedAt: new Date() }).where(eq(adminSettings.key, key));
+  } else {
+    await db.insert(adminSettings).values({ key, value });
+  }
+}
+
+export async function getChatSessionByOrderId(orderId: string): Promise<ChatSession | undefined> {
+  const [session] = await db.select().from(chatSessions).where(eq(chatSessions.orderId, orderId));
+  return session;
+}
+
+export async function getActiveChatSession(): Promise<ChatSession | undefined> {
+  const [session] = await db.select().from(chatSessions).where(eq(chatSessions.status, "active"));
+  return session;
+}
+
+export async function getRingingChatSessions(): Promise<ChatSession[]> {
+  return db.select().from(chatSessions)
+    .where(eq(chatSessions.status, "ringing"))
+    .orderBy(desc(chatSessions.createdAt));
+}
+
+export async function acceptChatSession(sessionId: string): Promise<ChatSession | undefined> {
+  const [session] = await db.update(chatSessions).set({
+    status: "active",
+    acceptedAt: new Date(),
+  }).where(eq(chatSessions.id, sessionId)).returning();
+
+  if (session) {
+    await db.insert(notifications).values({
+      userId: session.clientId,
+      type: "chat_accepted",
+      title: "Chat Session Started",
+      body: "The advisor has accepted your chat. Your session is now live!",
+      orderId: session.orderId,
+    });
+  }
+
+  return session;
+}
+
+export async function endChatSession(sessionId: string): Promise<ChatSession | undefined> {
+  const [session] = await db.update(chatSessions).set({
+    status: "ended",
+    endedAt: new Date(),
+  }).where(eq(chatSessions.id, sessionId)).returning();
+
+  if (session) {
+    await db.update(orders).set({ status: "delivered", deliveredAt: new Date() }).where(eq(orders.id, session.orderId));
+
+    await db.insert(notifications).values({
+      userId: session.clientId,
+      type: "chat_ended",
+      title: "Chat Session Ended",
+      body: "Your live chat session has ended. Thank you!",
+      orderId: session.orderId,
+    });
+  }
+
+  return session;
+}
+
+export async function addChatMessage(sessionId: string, senderId: string, senderRole: string, message: string): Promise<ChatMessage> {
+  const [msg] = await db.insert(chatMessages).values({
+    sessionId,
+    senderId,
+    senderRole,
+    message,
+  }).returning();
+  return msg;
+}
+
+export async function getChatMessages(sessionId: string): Promise<ChatMessage[]> {
+  return db.select().from(chatMessages)
+    .where(eq(chatMessages.sessionId, sessionId))
+    .orderBy(chatMessages.createdAt);
+}
+
+export async function getLiveChatAvailability(): Promise<{ status: "online" | "offline" | "busy" }> {
+  const setting = await getAdminSetting("live_chat_enabled");
+  if (setting !== "true") return { status: "offline" };
+
+  const activeSession = await getActiveChatSession();
+  if (activeSession) return { status: "busy" };
+
+  return { status: "online" };
 }
 
 export async function seedDatabase(): Promise<void> {
@@ -243,5 +359,10 @@ export async function seedDatabase(): Promise<void> {
       await db.update(users).set({ passwordHash: hash }).where(eq(users.id, existingAdmin.id));
       console.log("Admin password updated");
     }
+  }
+
+  const liveChatSetting = await getAdminSetting("live_chat_enabled");
+  if (liveChatSetting === null) {
+    await setAdminSetting("live_chat_enabled", "false");
   }
 }
