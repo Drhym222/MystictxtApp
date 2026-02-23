@@ -417,7 +417,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
       const cancelPath = `/order/${order.id}`;
 
       const session = await stripe.checkout.sessions.create({
-        payment_method_types: ["card"],
+        payment_method_types: ["card", "paypal"],
         mode: "payment",
         customer_email: user.email,
         line_items: [

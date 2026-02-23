@@ -205,7 +205,7 @@ export default function OrderFormScreen() {
           <View style={styles.infoBox}>
             <Ionicons name="shield-checkmark-outline" size={18} color={Colors.dark.accent} />
             <Text style={styles.infoText}>
-              Secure payment powered by Stripe. Your order will be processed immediately after payment.
+              Secure payment via Stripe or PayPal. Your order will be processed immediately after payment.
               {isExpress ? " Express delivery within 59 minutes." : " Standard delivery within 24 hours."}
             </Text>
           </View>
