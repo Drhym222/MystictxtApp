@@ -1,5 +1,5 @@
 import React, { useState } from "react";
-import { View, Text, TextInput, Pressable, StyleSheet, Platform, ActivityIndicator } from "react-native";
+import { View, Text, TextInput, Pressable, StyleSheet, Platform, ActivityIndicator, Image } from "react-native";
 import { LinearGradient } from "expo-linear-gradient";
 import { router } from "expo-router";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
@@ -50,7 +50,7 @@ export default function LegacyLoginScreen() {
         bottomOffset={40}
       >
         <View style={styles.titleArea}>
-          <Ionicons name="shield-checkmark-outline" size={40} color={Colors.dark.accent} />
+          <Image source={require("@/assets/images/icon.png")} style={{ width: 64, height: 64, borderRadius: 16, marginBottom: 8 }} resizeMode="contain" />
           <Text style={styles.title}>Legacy Portal</Text>
           <Text style={styles.subtitle}>Advisor sign in</Text>
         </View>
