@@ -494,61 +494,63 @@ export async function registerRoutes(app: Express): Promise<Server> {
   });
 
   app.get("/api/payments/callback", async (req: Request, res: Response) => {
+    const orderId = req.query.orderId as string;
+    const isChat = req.query.isChat === "1";
+
     try {
       const sessionId = req.query.session_id as string;
-      const orderId = req.query.orderId as string;
-      const isChat = req.query.isChat === "1";
-
       if (sessionId && orderId) {
         const stripeSecretKey = process.env.STRIPE_SECRET_KEY;
         if (stripeSecretKey) {
-          const stripe = new Stripe(stripeSecretKey);
-          const session = await stripe.checkout.sessions.retrieve(sessionId);
-          if (session.payment_status === "paid") {
-            await updateOrderPayment(orderId, (session.payment_intent as string) || session.id);
+          try {
+            const stripe = new Stripe(stripeSecretKey);
+            const session = await stripe.checkout.sessions.retrieve(sessionId);
+            if (session.payment_status === "paid") {
+              await updateOrderPayment(orderId, (session.payment_intent as string) || session.id);
+            }
+          } catch (stripeErr) {
+            console.error("Stripe session retrieval error:", stripeErr);
           }
         }
       }
-
-      const callbackHost = req.get('host') || process.env.REPLIT_DEV_DOMAIN || 'mystic-text-portals.replit.app';
-      const appBase = `https://${callbackHost}`;
-      const path = isChat && orderId ? `/live-chat/${orderId}` : orderId ? `/order/${orderId}` : `/`;
-      const fullRedirectUrl = `${appBase}${path}`;
-      
-      res.send(`
-        <!DOCTYPE html>
-        <html>
-        <head><title>Payment Complete</title>
-        <meta name="viewport" content="width=device-width, initial-scale=1">
-        <style>
-          body { background: #0A0A1A; color: #E8E8F0; font-family: sans-serif; display: flex; align-items: center; justify-content: center; height: 100vh; margin: 0; }
-          .container { text-align: center; padding: 40px; max-width: 400px; }
-          h1 { color: #D4A853; margin-bottom: 16px; font-size: 24px; }
-          p { color: #8888AA; margin-bottom: 24px; }
-          .btn { display: inline-block; background: linear-gradient(90deg, #D4A853, #B08930); color: #0A0A1A; text-decoration: none; padding: 14px 32px; border-radius: 14px; font-weight: 700; font-size: 16px; }
-          .spinner { width: 40px; height: 40px; border: 3px solid rgba(212,168,83,0.3); border-top-color: #D4A853; border-radius: 50%; animation: spin 1s linear infinite; margin: 0 auto 20px; }
-          @keyframes spin { to { transform: rotate(360deg); } }
-        </style>
-        </head>
-        <body>
-          <div class="container">
-            <div class="spinner"></div>
-            <h1>Payment Successful!</h1>
-            <p>${isChat ? 'Your live chat session is being set up. Redirecting...' : 'Your order has been placed. Redirecting...'}</p>
-            <a class="btn" href="${fullRedirectUrl}" id="returnBtn">Return to MysticTxt</a>
-          </div>
-          <script>
-            setTimeout(function() {
-              window.location.href = "${fullRedirectUrl}";
-            }, 2500);
-          </script>
-        </body>
-        </html>
-      `);
     } catch (err) {
-      console.error("Callback error:", err);
-      res.send("Payment processing. You can close this window.");
+      console.error("Callback payment verification error:", err);
     }
+
+    const callbackHost = req.get('host') || process.env.REPLIT_DEV_DOMAIN || 'mystic-text-portals.replit.app';
+    const appBase = `https://${callbackHost}`;
+    const path = isChat && orderId ? `/live-chat/${orderId}` : orderId ? `/order/${orderId}` : `/`;
+    const fullRedirectUrl = `${appBase}${path}`;
+    
+    res.send(`
+      <!DOCTYPE html>
+      <html>
+      <head><title>Payment Complete</title>
+      <meta name="viewport" content="width=device-width, initial-scale=1">
+      <style>
+        body { background: #0A0A1A; color: #E8E8F0; font-family: sans-serif; display: flex; align-items: center; justify-content: center; height: 100vh; margin: 0; }
+        .container { text-align: center; padding: 40px; max-width: 400px; }
+        .check { font-size: 48px; margin-bottom: 12px; }
+        h1 { color: #D4A853; margin-bottom: 16px; font-size: 24px; }
+        p { color: #8888AA; margin-bottom: 24px; }
+        .btn { display: inline-block; background: linear-gradient(90deg, #D4A853, #B08930); color: #0A0A1A; text-decoration: none; padding: 14px 32px; border-radius: 14px; font-weight: 700; font-size: 16px; }
+      </style>
+      </head>
+      <body>
+        <div class="container">
+          <div class="check">✨</div>
+          <h1>Payment Successful!</h1>
+          <p>${isChat ? 'Your live chat session is being set up. Redirecting...' : 'Your order has been placed. Redirecting to your order...'}</p>
+          <a class="btn" href="${fullRedirectUrl}" id="returnBtn">Return to MysticTxt</a>
+        </div>
+        <script>
+          setTimeout(function() {
+            window.location.href = "${fullRedirectUrl}";
+          }, 1500);
+        </script>
+      </body>
+      </html>
+    `);
   });
 
   app.get("/api/payments/verify/:orderId", authMiddleware, async (req: Request, res: Response) => {
