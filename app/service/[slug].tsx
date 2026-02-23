@@ -51,6 +51,15 @@ export default function ServiceDetailScreen() {
     queryKey: [`api/services/${slug}`],
   });
 
+  const { data: chatAvailability } = useQuery({
+    queryKey: ["live-chat-availability"],
+    queryFn: () => apiFetch("api/live-chat/availability"),
+    enabled: slug === "live-chat",
+    refetchInterval: 10000,
+  });
+
+  const chatStatus = chatAvailability?.status || "offline";
+
   const isLiveChat = service?.slug === "live-chat";
 
   function getChatPriceCents(): number {
@@ -126,6 +135,24 @@ export default function ServiceDetailScreen() {
           <Text style={styles.heroSubtitle}>
             {isLiveChat ? "From $3.99 / 5 min" : `Starting at $${basePrice.toFixed(2)}`}
           </Text>
+          {isLiveChat && (
+            <View style={[styles.availabilityBadge, {
+              backgroundColor: chatStatus === "online" ? "rgba(76,175,80,0.2)" :
+                chatStatus === "busy" ? "rgba(243,156,18,0.2)" : "rgba(136,136,170,0.2)",
+            }]}>
+              <View style={[styles.availabilityDot, {
+                backgroundColor: chatStatus === "online" ? Colors.dark.success :
+                  chatStatus === "busy" ? Colors.dark.warning : Colors.dark.textSecondary,
+              }]} />
+              <Text style={[styles.availabilityText, {
+                color: chatStatus === "online" ? Colors.dark.success :
+                  chatStatus === "busy" ? Colors.dark.warning : Colors.dark.textSecondary,
+              }]}>
+                {chatStatus === "online" ? "Advisor Online" :
+                  chatStatus === "busy" ? "Advisor Busy" : "Advisor Offline"}
+              </Text>
+            </View>
+          )}
         </LinearGradient>
 
         <View style={styles.section}>
@@ -329,7 +356,12 @@ export default function ServiceDetailScreen() {
         </View>
         <Pressable
           onPress={handleOrder}
-          style={({ pressed }) => [styles.orderBtn, pressed && { opacity: 0.85, transform: [{ scale: 0.98 }] }]}
+          disabled={isLiveChat && chatStatus !== "online"}
+          style={({ pressed }) => [
+            styles.orderBtn,
+            pressed && { opacity: 0.85, transform: [{ scale: 0.98 }] },
+            isLiveChat && chatStatus !== "online" && { opacity: 0.4 },
+          ]}
         >
           <LinearGradient
             colors={["#D4A853", "#B08930"]}
@@ -337,8 +369,12 @@ export default function ServiceDetailScreen() {
             start={{ x: 0, y: 0 }}
             end={{ x: 1, y: 0 }}
           >
-            <Ionicons name="cart-outline" size={20} color="#0A0A1A" />
-            <Text style={styles.orderBtnText}>{isLiveChat ? "Buy Session" : "Order Now"}</Text>
+            <Ionicons name={isLiveChat ? "chatbubbles" : "cart-outline"} size={20} color="#0A0A1A" />
+            <Text style={styles.orderBtnText}>
+              {isLiveChat
+                ? chatStatus === "online" ? "Buy Session" : chatStatus === "busy" ? "Advisor Busy" : "Advisor Offline"
+                : "Order Now"}
+            </Text>
           </LinearGradient>
         </Pressable>
       </View>
@@ -579,6 +615,24 @@ const styles = StyleSheet.create({
   customLabel: {
     color: Colors.dark.textSecondary,
     fontSize: 14,
+    fontWeight: "600",
+  },
+  availabilityBadge: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 6,
+    paddingHorizontal: 12,
+    paddingVertical: 6,
+    borderRadius: 20,
+    marginTop: 4,
+  },
+  availabilityDot: {
+    width: 8,
+    height: 8,
+    borderRadius: 4,
+  },
+  availabilityText: {
+    fontSize: 13,
     fontWeight: "600",
   },
 });

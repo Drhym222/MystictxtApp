@@ -7,8 +7,12 @@ import {
   createOrder, getClientOrders, getAllOrders, getOrderById, updateOrderStatus,
   getNotifications, getUnreadNotificationCount, markNotificationRead,
   markAllNotificationsRead, seedDatabase, updateOrderPayment,
+  getAdminSetting, setAdminSetting, getChatSessionByOrderId, getActiveChatSession,
+  getRingingChatSessions, acceptChatSession, endChatSession, addChatMessage,
+  getChatMessages, getLiveChatAvailability, getUserById,
 } from "./storage";
-import { registerSchema, loginSchema, createOrderSchema } from "@shared/schema";
+import { registerSchema, loginSchema, createOrderSchema, orders } from "@shared/schema";
+import { db } from "./db";
 
 const JWT_SECRET = process.env.SESSION_SECRET || "mystic-secret-key-change-me";
 
@@ -94,7 +98,6 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
   app.get("/api/auth/me", authMiddleware, async (req: Request, res: Response) => {
     try {
-      const { getUserById } = await import("./storage");
       const user = await getUserById((req as any).userId);
       if (!user) return res.status(404).json({ message: "User not found" });
       res.json({ id: user.id, email: user.email, role: user.role });
@@ -131,6 +134,16 @@ export async function registerRoutes(app: Express): Promise<Server> {
       const { serviceId, deliveryType, fullName, dob, question, details, chatMinutes } = parsed.data;
       const service = await getServiceById(serviceId);
       if (!service) return res.status(404).json({ message: "Service not found" });
+
+      if (service.slug === "live-chat") {
+        const availability = await getLiveChatAvailability();
+        if (availability.status === "offline") {
+          return res.status(400).json({ message: "Live chat is currently offline. The advisor is not available." });
+        }
+        if (availability.status === "busy") {
+          return res.status(400).json({ message: "The advisor is currently in another live chat session. Please wait and try again." });
+        }
+      }
 
       let basePriceCents = service.priceUsdCents;
       if (service.slug === "live-chat" && chatMinutes) {
@@ -170,7 +183,8 @@ export async function registerRoutes(app: Express): Promise<Server> {
       if ((req as any).userRole !== "admin" && order.clientId !== (req as any).userId) {
         return res.status(403).json({ message: "Access denied" });
       }
-      res.json(order);
+      const chatSession = await getChatSessionByOrderId(order.id);
+      res.json({ ...order, chatSession: chatSession || null });
     } catch (err) {
       res.status(500).json({ message: "Failed to load order" });
     }
@@ -233,6 +247,118 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
+  app.get("/api/live-chat/availability", async (_req: Request, res: Response) => {
+    try {
+      const availability = await getLiveChatAvailability();
+      res.json(availability);
+    } catch (err) {
+      res.status(500).json({ message: "Failed to check availability" });
+    }
+  });
+
+  app.get("/api/admin/settings/live-chat", authMiddleware, adminMiddleware, async (_req: Request, res: Response) => {
+    try {
+      const value = await getAdminSetting("live_chat_enabled");
+      res.json({ enabled: value === "true" });
+    } catch (err) {
+      res.status(500).json({ message: "Failed to get setting" });
+    }
+  });
+
+  app.put("/api/admin/settings/live-chat", authMiddleware, adminMiddleware, async (req: Request, res: Response) => {
+    try {
+      const { enabled } = req.body;
+      await setAdminSetting("live_chat_enabled", enabled ? "true" : "false");
+      res.json({ enabled: !!enabled });
+    } catch (err) {
+      res.status(500).json({ message: "Failed to update setting" });
+    }
+  });
+
+  app.get("/api/admin/chat/ringing", authMiddleware, adminMiddleware, async (_req: Request, res: Response) => {
+    try {
+      const sessions = await getRingingChatSessions();
+      const enriched = [];
+      for (const s of sessions) {
+        const order = await getOrderById(s.orderId);
+        enriched.push({ ...s, order });
+      }
+      res.json(enriched);
+    } catch (err) {
+      res.status(500).json({ message: "Failed to get ringing sessions" });
+    }
+  });
+
+  app.get("/api/admin/chat/active", authMiddleware, adminMiddleware, async (_req: Request, res: Response) => {
+    try {
+      const session = await getActiveChatSession();
+      if (!session) return res.json(null);
+      const order = await getOrderById(session.orderId);
+      res.json({ ...session, order });
+    } catch (err) {
+      res.status(500).json({ message: "Failed to get active session" });
+    }
+  });
+
+  app.post("/api/admin/chat/:sessionId/accept", authMiddleware, adminMiddleware, async (req: Request, res: Response) => {
+    try {
+      const existing = await getActiveChatSession();
+      if (existing) {
+        return res.status(400).json({ message: "You already have an active chat session. End it first." });
+      }
+      const session = await acceptChatSession(req.params.sessionId);
+      if (!session) return res.status(404).json({ message: "Session not found" });
+      res.json(session);
+    } catch (err) {
+      res.status(500).json({ message: "Failed to accept session" });
+    }
+  });
+
+  app.post("/api/admin/chat/:sessionId/end", authMiddleware, adminMiddleware, async (req: Request, res: Response) => {
+    try {
+      const session = await endChatSession(req.params.sessionId);
+      if (!session) return res.status(404).json({ message: "Session not found" });
+      res.json(session);
+    } catch (err) {
+      res.status(500).json({ message: "Failed to end session" });
+    }
+  });
+
+  app.get("/api/chat/:sessionId/messages", authMiddleware, async (req: Request, res: Response) => {
+    try {
+      const messages = await getChatMessages(req.params.sessionId);
+      res.json(messages);
+    } catch (err) {
+      res.status(500).json({ message: "Failed to get messages" });
+    }
+  });
+
+  app.post("/api/chat/:sessionId/messages", authMiddleware, async (req: Request, res: Response) => {
+    try {
+      const { message } = req.body;
+      if (!message?.trim()) return res.status(400).json({ message: "Message required" });
+      const msg = await addChatMessage(
+        req.params.sessionId,
+        (req as any).userId,
+        (req as any).userRole === "admin" ? "admin" : "client",
+        message.trim()
+      );
+      res.json(msg);
+    } catch (err) {
+      res.status(500).json({ message: "Failed to send message" });
+    }
+  });
+
+  app.get("/api/chat/session/:orderId", authMiddleware, async (req: Request, res: Response) => {
+    try {
+      const session = await getChatSessionByOrderId(req.params.orderId);
+      if (!session) return res.json(null);
+      res.json(session);
+    } catch (err) {
+      res.status(500).json({ message: "Failed to get session" });
+    }
+  });
+
   app.post("/api/payments/initialize", authMiddleware, async (req: Request, res: Response) => {
     try {
       const { orderId } = req.body;
@@ -247,23 +373,25 @@ export async function registerRoutes(app: Express): Promise<Server> {
         return res.status(400).json({ message: "Order already processed" });
       }
 
-      const { getUserById } = await import("./storage");
       const user = await getUserById((req as any).userId);
       if (!user) return res.status(404).json({ message: "User not found" });
 
       const amountUsd = order.priceUsdCents / 100;
-      const reference = `MYSTIC-${order.id}-${Date.now()}`;
+      const reference = `MYS-${order.id.slice(0, 8)}-${Date.now().toString(36)}`;
       
       const korapaySecret = process.env.KORAPAY_SECRET_KEY;
       if (!korapaySecret) {
         return res.status(500).json({ message: "Payment not configured" });
       }
 
-      const host = process.env.REPLIT_DEV_DOMAIN || process.env.REPL_SLUG && `${process.env.REPL_SLUG}.${process.env.REPL_OWNER}.repl.co` || req.get('host') || 'mystic-text-portals.replit.app';
+      const prodDomain = process.env.REPL_SLUG ? `${process.env.REPL_SLUG}.replit.app` : null;
+      const host = prodDomain || process.env.REPLIT_DEV_DOMAIN || req.get('host') || 'mystic-text-portals.replit.app';
       const baseUrl = `https://${host}`;
 
       const exchangeRate = 1580;
       const amountNgn = Math.ceil(amountUsd * exchangeRate);
+
+      const isLiveChat = order.service?.slug === "live-chat";
 
       const response = await globalThis.fetch("https://api.korapay.com/merchant/api/v1/charges/initialize", {
         method: "POST",
@@ -275,7 +403,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
           reference,
           amount: amountNgn,
           currency: "NGN",
-          redirect_url: `${baseUrl}/api/payments/callback`,
+          redirect_url: `${baseUrl}/api/payments/callback?orderId=${order.id}&isChat=${isLiveChat ? '1' : '0'}`,
           customer: {
             name: user.email.split("@")[0],
             email: user.email,
@@ -311,11 +439,15 @@ export async function registerRoutes(app: Express): Promise<Server> {
       if (event === "charge.success" && data) {
         const ref = data.reference || data.payment_reference;
         if (ref) {
-          const orderIdMatch = ref.match(/MYSTIC-([^-]+)-/);
+          const orderIdMatch = ref.match(/MYS(?:TIC)?-([^-]+)-/);
           if (orderIdMatch) {
-            const orderId = orderIdMatch[1];
-            await updateOrderPayment(orderId, ref);
-            console.log("Order paid via webhook:", orderId);
+            const partialId = orderIdMatch[1];
+            const allOrders = await db.select().from(orders);
+            const matchedOrder = allOrders.find(o => o.id.startsWith(partialId));
+            if (matchedOrder) {
+              await updateOrderPayment(matchedOrder.id, ref);
+              console.log("Order paid via webhook:", matchedOrder.id);
+            }
           }
         }
       }
@@ -330,11 +462,22 @@ export async function registerRoutes(app: Express): Promise<Server> {
   app.get("/api/payments/callback", async (req: Request, res: Response) => {
     try {
       const reference = req.query.reference as string;
+      const orderId = req.query.orderId as string;
+      const isChat = req.query.isChat === "1";
+
       if (reference) {
-        const orderIdMatch = reference.match(/MYSTIC-([^-]+)-/);
-        if (orderIdMatch) {
-          const orderId = orderIdMatch[1];
-          
+        let matchedOrderId = orderId;
+        if (!matchedOrderId) {
+          const orderIdMatch = reference.match(/MYS(?:TIC)?-([^-]+)-/);
+          if (orderIdMatch) {
+            const partialId = orderIdMatch[1];
+            const allOrders = await db.select().from(orders);
+            const matchedOrder = allOrders.find(o => o.id.startsWith(partialId));
+            matchedOrderId = matchedOrder?.id;
+          }
+        }
+        
+        if (matchedOrderId) {
           const korapaySecret = process.env.KORAPAY_SECRET_KEY;
           if (korapaySecret) {
             const verifyRes = await globalThis.fetch(
@@ -345,28 +488,46 @@ export async function registerRoutes(app: Express): Promise<Server> {
             );
             const verifyData = await verifyRes.json();
             if (verifyData.status && verifyData.data?.status === "success") {
-              await updateOrderPayment(orderId, reference);
+              await updateOrderPayment(matchedOrderId, reference);
             }
           }
         }
       }
+
+      const productionDomain = 'mystic-text-portals.replit.app';
+      const appBase = process.env.NODE_ENV === 'production'
+        ? `https://${productionDomain}`
+        : `https://${process.env.REPLIT_DEV_DOMAIN || productionDomain}`;
+      const path = isChat && orderId ? `/live-chat/${orderId}` : orderId ? `/order/${orderId}` : `/`;
+      const fullRedirectUrl = `${appBase}${path}`;
       
       res.send(`
         <!DOCTYPE html>
         <html>
         <head><title>Payment Complete</title>
+        <meta name="viewport" content="width=device-width, initial-scale=1">
         <style>
           body { background: #0A0A1A; color: #E8E8F0; font-family: sans-serif; display: flex; align-items: center; justify-content: center; height: 100vh; margin: 0; }
-          .container { text-align: center; padding: 40px; }
-          h1 { color: #D4A853; margin-bottom: 16px; }
-          p { color: #8888AA; }
+          .container { text-align: center; padding: 40px; max-width: 400px; }
+          h1 { color: #D4A853; margin-bottom: 16px; font-size: 24px; }
+          p { color: #8888AA; margin-bottom: 24px; }
+          .btn { display: inline-block; background: linear-gradient(90deg, #D4A853, #B08930); color: #0A0A1A; text-decoration: none; padding: 14px 32px; border-radius: 14px; font-weight: 700; font-size: 16px; }
+          .spinner { width: 40px; height: 40px; border: 3px solid rgba(212,168,83,0.3); border-top-color: #D4A853; border-radius: 50%; animation: spin 1s linear infinite; margin: 0 auto 20px; }
+          @keyframes spin { to { transform: rotate(360deg); } }
         </style>
         </head>
         <body>
           <div class="container">
-            <h1>Payment Complete</h1>
-            <p>Your payment has been processed. You can close this window and return to the app.</p>
+            <div class="spinner"></div>
+            <h1>Payment Successful!</h1>
+            <p>${isChat ? 'Your live chat session is being set up. Redirecting...' : 'Your order has been placed. Redirecting...'}</p>
+            <a class="btn" href="${fullRedirectUrl}" id="returnBtn">Return to MysticTxt</a>
           </div>
+          <script>
+            setTimeout(function() {
+              window.location.href = "${fullRedirectUrl}";
+            }, 2500);
+          </script>
         </body>
         </html>
       `);

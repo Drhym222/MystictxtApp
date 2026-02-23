@@ -56,6 +56,33 @@ export const notifications = pgTable("notifications", {
   createdAt: timestamp("created_at").defaultNow().notNull(),
 });
 
+export const adminSettings = pgTable("admin_settings", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  key: text("key").notNull().unique(),
+  value: text("value").notNull(),
+  updatedAt: timestamp("updated_at").defaultNow().notNull(),
+});
+
+export const chatSessions = pgTable("chat_sessions", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  orderId: varchar("order_id").notNull().references(() => orders.id),
+  clientId: varchar("client_id").notNull().references(() => users.id),
+  purchasedMinutes: integer("purchased_minutes").notNull(),
+  status: text("status").notNull().default("ringing"),
+  acceptedAt: timestamp("accepted_at"),
+  endedAt: timestamp("ended_at"),
+  createdAt: timestamp("created_at").defaultNow().notNull(),
+});
+
+export const chatMessages = pgTable("chat_messages", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  sessionId: varchar("session_id").notNull().references(() => chatSessions.id),
+  senderId: varchar("sender_id").notNull().references(() => users.id),
+  senderRole: text("sender_role").notNull(),
+  message: text("message").notNull(),
+  createdAt: timestamp("created_at").defaultNow().notNull(),
+});
+
 export const insertUserSchema = createInsertSchema(users).pick({
   email: true,
   passwordHash: true,
@@ -88,3 +115,6 @@ export type Service = typeof services.$inferSelect;
 export type Order = typeof orders.$inferSelect;
 export type OrderIntake = typeof orderIntake.$inferSelect;
 export type Notification = typeof notifications.$inferSelect;
+export type AdminSetting = typeof adminSettings.$inferSelect;
+export type ChatSession = typeof chatSessions.$inferSelect;
+export type ChatMessage = typeof chatMessages.$inferSelect;
