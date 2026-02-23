@@ -2,6 +2,7 @@ import type { Express, Request, Response } from "express";
 import { createServer, type Server } from "node:http";
 import bcrypt from "bcryptjs";
 import jwt from "jsonwebtoken";
+import Stripe from "stripe";
 import {
   getUserByEmail, createUser, getServices, getServiceBySlug, getServiceById,
   createOrder, getClientOrders, getAllOrders, getOrderById, updateOrderStatus,
@@ -401,53 +402,48 @@ export async function registerRoutes(app: Express): Promise<Server> {
       const user = await getUserById((req as any).userId);
       if (!user) return res.status(404).json({ message: "User not found" });
 
-      const amountUsd = order.priceUsdCents / 100;
-      const reference = `MYS-${order.id.slice(0, 8)}-${Date.now().toString(36)}`;
-      
-      const korapaySecret = process.env.KORAPAY_SECRET_KEY;
-      if (!korapaySecret) {
+      const stripeSecretKey = process.env.STRIPE_SECRET_KEY;
+      if (!stripeSecretKey) {
         return res.status(500).json({ message: "Payment not configured" });
       }
 
+      const stripe = new Stripe(stripeSecretKey);
+
       const host = req.get('host') || process.env.REPLIT_DEV_DOMAIN || 'mystic-text-portals.replit.app';
       const baseUrl = `https://${host}`;
-
-      const exchangeRate = 1580;
-      const amountNgn = Math.ceil(amountUsd * exchangeRate);
-
       const isLiveChat = order.service?.slug === "live-chat";
 
-      const response = await globalThis.fetch("https://api.korapay.com/merchant/api/v1/charges/initialize", {
-        method: "POST",
-        headers: {
-          "Authorization": `Bearer ${korapaySecret}`,
-          "Content-Type": "application/json",
-        },
-        body: JSON.stringify({
-          reference,
-          amount: amountNgn,
-          currency: "NGN",
-          redirect_url: `${baseUrl}/api/payments/callback?orderId=${order.id}&isChat=${isLiveChat ? '1' : '0'}`,
-          customer: {
-            name: user.email.split("@")[0],
-            email: user.email,
+      const successPath = isLiveChat ? `/live-chat/${order.id}` : `/order/${order.id}`;
+      const cancelPath = `/order/${order.id}`;
+
+      const session = await stripe.checkout.sessions.create({
+        payment_method_types: ["card"],
+        mode: "payment",
+        customer_email: user.email,
+        line_items: [
+          {
+            price_data: {
+              currency: "usd",
+              product_data: {
+                name: `MysticTxt - ${order.service?.title || 'Service'}`,
+                description: `${(order as any).deliveryType === 'express' ? 'Express' : 'Standard'} delivery`,
+              },
+              unit_amount: order.priceUsdCents,
+            },
+            quantity: 1,
           },
-          notification_url: `${baseUrl}/api/payments/webhook`,
-          narration: `MysticTxt - ${order.service?.title || 'Service'} (${(order as any).deliveryType === 'express' ? 'Express' : 'Standard'})`,
-        }),
+        ],
+        metadata: {
+          orderId: order.id,
+          isLiveChat: isLiveChat ? "1" : "0",
+        },
+        success_url: `${baseUrl}/api/payments/callback?session_id={CHECKOUT_SESSION_ID}&orderId=${order.id}&isChat=${isLiveChat ? '1' : '0'}`,
+        cancel_url: `${baseUrl}${cancelPath}`,
       });
 
-      const data = await response.json();
-      
-      if (!data.status) {
-        console.error("Korapay init error:", JSON.stringify(data));
-        const errorMsg = data.message || "Payment provider error. Please try again.";
-        return res.status(500).json({ message: errorMsg });
-      }
-
       res.json({
-        checkoutUrl: data.data.checkout_url,
-        reference: data.data.reference || reference,
+        checkoutUrl: session.url,
+        sessionId: session.id,
       });
     } catch (err) {
       console.error("Payment init error:", err);
@@ -457,63 +453,59 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
   app.post("/api/payments/webhook", async (req: Request, res: Response) => {
     try {
-      const { event, data } = req.body;
-      console.log("Korapay webhook received:", event, data?.reference);
+      const stripeSecretKey = process.env.STRIPE_SECRET_KEY;
+      if (!stripeSecretKey) {
+        return res.status(500).json({ message: "Stripe not configured" });
+      }
 
-      if (event === "charge.success" && data) {
-        const ref = data.reference || data.payment_reference;
-        if (ref) {
-          const orderIdMatch = ref.match(/MYS(?:TIC)?-([^-]+)-/);
-          if (orderIdMatch) {
-            const partialId = orderIdMatch[1];
-            const allOrders = await db.select().from(orders);
-            const matchedOrder = allOrders.find(o => o.id.startsWith(partialId));
-            if (matchedOrder) {
-              await updateOrderPayment(matchedOrder.id, ref);
-              console.log("Order paid via webhook:", matchedOrder.id);
-            }
-          }
+      const stripe = new Stripe(stripeSecretKey);
+      const sig = req.headers["stripe-signature"] as string;
+      const webhookSecret = process.env.STRIPE_WEBHOOK_SECRET;
+
+      let event: Stripe.Event;
+
+      if (webhookSecret && sig) {
+        try {
+          event = stripe.webhooks.constructEvent((req as any).rawBody, sig, webhookSecret);
+        } catch (err: any) {
+          console.error("Stripe webhook signature verification failed:", err.message);
+          return res.status(400).json({ message: "Invalid signature" });
+        }
+      } else {
+        event = req.body as Stripe.Event;
+      }
+
+      if (event.type === "checkout.session.completed") {
+        const session = event.data.object as Stripe.Checkout.Session;
+        const orderId = session.metadata?.orderId;
+        const paymentIntentId = session.payment_intent as string;
+
+        if (orderId) {
+          await updateOrderPayment(orderId, paymentIntentId || session.id);
+          console.log("Order paid via Stripe webhook:", orderId);
         }
       }
 
-      res.json({ status: "success" });
+      res.json({ received: true });
     } catch (err) {
       console.error("Webhook error:", err);
-      res.json({ status: "received" });
+      res.json({ received: true });
     }
   });
 
   app.get("/api/payments/callback", async (req: Request, res: Response) => {
     try {
-      const reference = req.query.reference as string;
+      const sessionId = req.query.session_id as string;
       const orderId = req.query.orderId as string;
       const isChat = req.query.isChat === "1";
 
-      if (reference) {
-        let matchedOrderId = orderId;
-        if (!matchedOrderId) {
-          const orderIdMatch = reference.match(/MYS(?:TIC)?-([^-]+)-/);
-          if (orderIdMatch) {
-            const partialId = orderIdMatch[1];
-            const allOrders = await db.select().from(orders);
-            const matchedOrder = allOrders.find(o => o.id.startsWith(partialId));
-            matchedOrderId = matchedOrder?.id;
-          }
-        }
-        
-        if (matchedOrderId) {
-          const korapaySecret = process.env.KORAPAY_SECRET_KEY;
-          if (korapaySecret) {
-            const verifyRes = await globalThis.fetch(
-              `https://api.korapay.com/merchant/api/v1/charges/${reference}`,
-              {
-                headers: { "Authorization": `Bearer ${korapaySecret}` },
-              }
-            );
-            const verifyData = await verifyRes.json();
-            if (verifyData.status && verifyData.data?.status === "success") {
-              await updateOrderPayment(matchedOrderId, reference);
-            }
+      if (sessionId && orderId) {
+        const stripeSecretKey = process.env.STRIPE_SECRET_KEY;
+        if (stripeSecretKey) {
+          const stripe = new Stripe(stripeSecretKey);
+          const session = await stripe.checkout.sessions.retrieve(sessionId);
+          if (session.payment_status === "paid") {
+            await updateOrderPayment(orderId, (session.payment_intent as string) || session.id);
           }
         }
       }
