@@ -11,6 +11,7 @@ import { apiFetch } from "@/lib/api";
 import Colors from "@/constants/colors";
 import * as Haptics from "expo-haptics";
 import * as WebBrowser from "expo-web-browser";
+import * as Linking from "expo-linking";
 
 export default function OrderFormScreen() {
   const { serviceId, serviceTitle, price, deliveryType: initialDeliveryType, chatMinutes: chatMinutesParam } = useLocalSearchParams<{
@@ -64,7 +65,8 @@ export default function OrderFormScreen() {
       setPaymentStep("paying");
 
       if (Platform.OS === "web") {
-        window.open(paymentResult.checkoutUrl, "_blank");
+        window.location.href = paymentResult.checkoutUrl;
+        return { orderId, paid: false, webRedirect: true };
       } else {
         await WebBrowser.openBrowserAsync(paymentResult.checkoutUrl, {
           dismissButtonStyle: "done",
@@ -84,9 +86,10 @@ export default function OrderFormScreen() {
         } catch {}
       }
 
-      return { orderId, paid };
+      return { orderId, paid, webRedirect: false };
     },
     onSuccess: (result) => {
+      if (result?.webRedirect) return;
       try { Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success); } catch {}
       queryClient.invalidateQueries({ queryKey: ["client-orders"] });
       setPaymentStep("form");
