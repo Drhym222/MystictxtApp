@@ -45,7 +45,14 @@
       "reactCompiler": true
     },
     "extra": {
-      "EXPO_PUBLIC_DOMAIN": "mystic-text-portals.replit.app"
-    }
+      "EXPO_PUBLIC_DOMAIN": "mystic-text-portals.replit.app",
+      "router": {
+        "origin": "https://replit.com/"
+      },
+      "eas": {
+        "projectId": "bae32162-521a-4d63-9797-f9fa1d3cd6bc"
+      }
+    },
+    "owner": "drhym22"
   }
 }
