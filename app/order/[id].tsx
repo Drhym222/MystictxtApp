@@ -119,6 +119,48 @@ export default function OrderDetailScreen() {
             </View>
           </View>
         )}
+
+        {order.chatSession && (
+          <View style={styles.section}>
+            <Text style={styles.sectionTitle}>Live Chat Session</Text>
+            <View style={styles.detailCard}>
+              <View style={styles.detailRow}>
+                <Text style={styles.detailLabel}>Status</Text>
+                <View style={{ flexDirection: "row", alignItems: "center", gap: 6 }}>
+                  <View style={{
+                    width: 8, height: 8, borderRadius: 4,
+                    backgroundColor: order.chatSession.status === "active" ? Colors.dark.success :
+                      order.chatSession.status === "ringing" ? Colors.dark.warning : Colors.dark.textSecondary,
+                  }} />
+                  <Text style={styles.detailValue}>
+                    {order.chatSession.status === "ringing" ? "Waiting for advisor..." :
+                      order.chatSession.status === "active" ? "Active" : "Ended"}
+                  </Text>
+                </View>
+              </View>
+              <View style={styles.detailRow}>
+                <Text style={styles.detailLabel}>Session Time</Text>
+                <Text style={styles.detailValue}>{order.chatSession.purchasedMinutes} minutes</Text>
+              </View>
+              {(order.chatSession.status === "ringing" || order.chatSession.status === "active") && (
+                <Pressable
+                  onPress={() => router.push({ pathname: "/live-chat/[orderId]", params: { orderId: order.id } })}
+                  style={({ pressed }) => [styles.joinChatBtn, pressed && { opacity: 0.8 }]}
+                >
+                  <LinearGradient
+                    colors={order.chatSession.status === "active" ? ["#4CAF50", "#388E3C"] : ["#D4A853", "#B08930"]}
+                    style={styles.joinChatBtnGradient}
+                  >
+                    <Ionicons name="chatbubbles" size={18} color="#fff" />
+                    <Text style={styles.joinChatBtnText}>
+                      {order.chatSession.status === "active" ? "Join Live Chat" : "View Chat Status"}
+                    </Text>
+                  </LinearGradient>
+                </Pressable>
+              )}
+            </View>
+          </View>
+        )}
       </ScrollView>
     </View>
   );
@@ -256,5 +298,23 @@ const styles = StyleSheet.create({
     fontSize: 15,
     color: Colors.dark.text,
     lineHeight: 24,
+  },
+  joinChatBtn: {
+    borderRadius: 14,
+    overflow: "hidden",
+    marginTop: 4,
+  },
+  joinChatBtnGradient: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "center",
+    gap: 8,
+    paddingVertical: 14,
+    borderRadius: 14,
+  },
+  joinChatBtnText: {
+    color: "#fff",
+    fontSize: 15,
+    fontWeight: "700",
   },
 });
