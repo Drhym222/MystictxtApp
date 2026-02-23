@@ -78,7 +78,7 @@ export default function OrderDetailScreen() {
   const isLiveChat = order.service?.slug === "live-chat";
   const chatMinutes = order.chatSession?.purchasedMinutes || order.intake?.detailsJson?.chatMinutes;
   const isAdmin = user?.role === "admin";
-  const canDeliver = isAdmin && order.status === "paid";
+  const canDeliver = isAdmin && order.status === "paid" && !isLiveChat;
 
   return (
     <View style={[styles.container, { paddingTop: topPadding }]}>

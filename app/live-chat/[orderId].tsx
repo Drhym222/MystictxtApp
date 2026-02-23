@@ -138,9 +138,12 @@ export default function LiveChatScreen() {
           <View style={{ width: 28 }} />
         </View>
         <View style={styles.emptyState}>
-          <Ionicons name="chatbubbles-outline" size={48} color={Colors.dark.textSecondary} />
-          <Text style={styles.emptyText}>Chat session not found</Text>
-          <Pressable onPress={() => router.back()} style={styles.backBtn}>
+          <ActivityIndicator size="large" color={Colors.dark.accent} />
+          <Text style={styles.emptyText}>Setting up your chat session...</Text>
+          <Text style={{ fontSize: 13, color: Colors.dark.textSecondary, textAlign: "center", marginTop: 4 }}>
+            This may take a moment while payment is confirmed.
+          </Text>
+          <Pressable onPress={() => router.back()} style={[styles.backBtn, { marginTop: 16 }]}>
             <Text style={styles.backBtnText}>Go Back</Text>
           </Pressable>
         </View>
