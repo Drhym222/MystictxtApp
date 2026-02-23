@@ -1,10 +1,11 @@
-import React from "react";
-import { View, Text, Pressable, StyleSheet, Platform, ScrollView, ActivityIndicator } from "react-native";
+import React, { useState, useEffect } from "react";
+import { View, Text, Pressable, StyleSheet, Platform, ScrollView, ActivityIndicator, TextInput } from "react-native";
 import { LinearGradient } from "expo-linear-gradient";
 import { router, useLocalSearchParams } from "expo-router";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
-import { useQuery } from "@tanstack/react-query";
+import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { Ionicons } from "@expo/vector-icons";
+import * as Haptics from "expo-haptics";
 import { useAuth } from "@/lib/auth-context";
 import { apiFetch } from "@/lib/api";
 import Colors from "@/constants/colors";
@@ -19,14 +20,41 @@ const STATUS_CONFIG: Record<string, { color: string; icon: string; label: string
 export default function OrderDetailScreen() {
   const { id } = useLocalSearchParams<{ id: string }>();
   const insets = useSafeAreaInsets();
-  const { token } = useAuth();
+  const { token, user } = useAuth();
   const topPadding = Platform.OS === "web" ? 67 : insets.top;
+  const queryClient = useQueryClient();
+  const [adminResponse, setAdminResponse] = useState("");
 
   const { data: order, isLoading } = useQuery({
     queryKey: ["order-detail", id],
     queryFn: () => apiFetch(`api/orders/${id}`, { token }),
     enabled: !!token && !!id,
   });
+
+  const deliverMutation = useMutation({
+    mutationFn: () =>
+      apiFetch(`api/admin/orders/${order.id}`, {
+        method: "PUT",
+        body: { status: "delivered", adminResponse },
+        token,
+      }),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["order-detail", id] });
+      queryClient.invalidateQueries({ queryKey: ["admin-all-orders"] });
+      try { Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success); } catch {}
+      setAdminResponse("");
+    },
+  });
+
+  useEffect(() => {
+    if (
+      order?.chatSession &&
+      (order.chatSession.status === "ringing" || order.chatSession.status === "active") &&
+      user?.role !== "admin"
+    ) {
+      router.replace({ pathname: "/live-chat/[orderId]", params: { orderId: order.id } });
+    }
+  }, [order?.chatSession?.status, user?.role]);
 
   if (isLoading || !order) {
     return (
@@ -46,6 +74,11 @@ export default function OrderDetailScreen() {
   const createdDate = new Date(order.createdAt).toLocaleDateString("en-US", {
     weekday: "long", month: "long", day: "numeric", year: "numeric",
   });
+
+  const isLiveChat = order.service?.slug === "live-chat";
+  const chatMinutes = order.chatSession?.purchasedMinutes || order.intake?.detailsJson?.chatMinutes;
+  const isAdmin = user?.role === "admin";
+  const canDeliver = isAdmin && order.status === "paid";
 
   return (
     <View style={[styles.container, { paddingTop: topPadding }]}>
@@ -77,12 +110,21 @@ export default function OrderDetailScreen() {
           <View style={styles.detailCard}>
             <Text style={styles.detailValue}>{order.service?.title || "Service"}</Text>
             <View style={styles.serviceMetaRow}>
-              <View style={[styles.deliveryTypeBadge, order.deliveryType === "express" && styles.deliveryTypeBadgeExpress]}>
-                {order.deliveryType === "express" && <Ionicons name="flash" size={12} color="#0A0A1A" />}
-                <Text style={[styles.deliveryTypeBadgeText, order.deliveryType === "express" && styles.deliveryTypeBadgeTextExpress]}>
-                  {order.deliveryType === "express" ? "Express - 59 min" : "Standard - 24 hrs"}
-                </Text>
-              </View>
+              {isLiveChat ? (
+                <View style={[styles.deliveryTypeBadge, { backgroundColor: "rgba(76, 175, 80, 0.15)" }]}>
+                  <Ionicons name="chatbubbles" size={12} color={Colors.dark.success} />
+                  <Text style={[styles.deliveryTypeBadgeText, { color: Colors.dark.success }]}>
+                    {chatMinutes} min session
+                  </Text>
+                </View>
+              ) : (
+                <View style={[styles.deliveryTypeBadge, order.deliveryType === "express" && styles.deliveryTypeBadgeExpress]}>
+                  {order.deliveryType === "express" && <Ionicons name="flash" size={12} color="#0A0A1A" />}
+                  <Text style={[styles.deliveryTypeBadgeText, order.deliveryType === "express" && styles.deliveryTypeBadgeTextExpress]}>
+                    {order.deliveryType === "express" ? "Express - 59 min" : "Standard - 24 hrs"}
+                  </Text>
+                </View>
+              )}
               <Text style={styles.detailPrice}>${(order.priceUsdCents / 100).toFixed(2)}</Text>
             </View>
           </View>
@@ -158,6 +200,44 @@ export default function OrderDetailScreen() {
                   </LinearGradient>
                 </Pressable>
               )}
+            </View>
+          </View>
+        )}
+
+        {canDeliver && (
+          <View style={styles.section}>
+            <Text style={styles.sectionTitle}>Deliver Reading</Text>
+            <View style={styles.detailCard}>
+              <TextInput
+                style={styles.adminInput}
+                placeholder="Write the reading response..."
+                placeholderTextColor={Colors.dark.textSecondary}
+                value={adminResponse}
+                onChangeText={setAdminResponse}
+                multiline
+                textAlignVertical="top"
+              />
+              <Pressable
+                onPress={() => deliverMutation.mutate()}
+                disabled={!adminResponse.trim() || deliverMutation.isPending}
+                style={({ pressed }) => [
+                  styles.deliverBtn,
+                  (!adminResponse.trim() || deliverMutation.isPending) && { opacity: 0.5 },
+                  pressed && { opacity: 0.8 },
+                ]}
+              >
+                <LinearGradient
+                  colors={["#4CAF50", "#388E3C"]}
+                  style={styles.deliverBtnGradient}
+                >
+                  {deliverMutation.isPending ? (
+                    <ActivityIndicator size="small" color="#fff" />
+                  ) : (
+                    <Ionicons name="checkmark-circle" size={18} color="#fff" />
+                  )}
+                  <Text style={styles.deliverBtnText}>Mark as Delivered</Text>
+                </LinearGradient>
+              </Pressable>
             </View>
           </View>
         )}
@@ -313,6 +393,34 @@ const styles = StyleSheet.create({
     borderRadius: 14,
   },
   joinChatBtnText: {
+    color: "#fff",
+    fontSize: 15,
+    fontWeight: "700",
+  },
+  adminInput: {
+    backgroundColor: Colors.dark.inputBackground,
+    borderWidth: 1,
+    borderColor: Colors.dark.inputBorder,
+    borderRadius: 12,
+    padding: 14,
+    color: Colors.dark.text,
+    fontSize: 15,
+    lineHeight: 22,
+    minHeight: 140,
+  },
+  deliverBtn: {
+    borderRadius: 14,
+    overflow: "hidden",
+  },
+  deliverBtnGradient: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "center",
+    gap: 8,
+    paddingVertical: 14,
+    borderRadius: 14,
+  },
+  deliverBtnText: {
     color: "#fff",
     fontSize: 15,
     fontWeight: "700",

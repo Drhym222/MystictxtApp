@@ -87,7 +87,13 @@ export default function OrderFormScreen() {
       queryClient.invalidateQueries({ queryKey: ["client-orders"] });
       setPaymentStep("form");
       router.dismissAll();
-      router.push("/(main)/orders");
+      if (isLiveChat && result?.orderId) {
+        router.push({ pathname: "/live-chat/[orderId]", params: { orderId: result.orderId } });
+      } else if (result?.orderId) {
+        router.push({ pathname: "/order/[id]", params: { id: result.orderId } });
+      } else {
+        router.push("/(main)/orders");
+      }
     },
     onError: (err: Error) => {
       setPaymentStep("form");
