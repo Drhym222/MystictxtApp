@@ -63,13 +63,17 @@ export default function OrderFormScreen() {
 
       setPaymentStep("paying");
 
-      await WebBrowser.openBrowserAsync(paymentResult.checkoutUrl, {
-        dismissButtonStyle: "done",
-        presentationStyle: WebBrowser.WebBrowserPresentationStyle.FULL_SCREEN,
-      });
+      if (Platform.OS === "web") {
+        window.open(paymentResult.checkoutUrl, "_blank");
+      } else {
+        await WebBrowser.openBrowserAsync(paymentResult.checkoutUrl, {
+          dismissButtonStyle: "done",
+          presentationStyle: WebBrowser.WebBrowserPresentationStyle.FULL_SCREEN,
+        });
+      }
 
       let paid = false;
-      for (let i = 0; i < 10; i++) {
+      for (let i = 0; i < 15; i++) {
         await new Promise(r => setTimeout(r, 2000));
         try {
           const verify = await apiFetch(`api/payments/verify/${orderId}`, { token });

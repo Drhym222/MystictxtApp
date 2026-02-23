@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useRef, useCallback } from "react";
-import { View, Text, Pressable, StyleSheet, Platform, FlatList, TextInput, ActivityIndicator, KeyboardAvoidingView } from "react-native";
+import { View, Text, Pressable, StyleSheet, Platform, FlatList, TextInput, ActivityIndicator, KeyboardAvoidingView, Animated } from "react-native";
 import { LinearGradient } from "expo-linear-gradient";
 import { router, useLocalSearchParams } from "expo-router";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
@@ -9,6 +9,8 @@ import * as Haptics from "expo-haptics";
 import { useAuth } from "@/lib/auth-context";
 import { apiFetch } from "@/lib/api";
 import Colors from "@/constants/colors";
+
+const EXTENSION_WINDOW_SECONDS = 60;
 
 export default function LiveChatScreen() {
   const { orderId } = useLocalSearchParams<{ orderId: string }>();
@@ -21,6 +23,10 @@ export default function LiveChatScreen() {
   const [messageText, setMessageText] = useState("");
   const flatListRef = useRef<FlatList>(null);
   const isAdmin = user?.role === "admin";
+  const [extensionCountdown, setExtensionCountdown] = useState(EXTENSION_WINDOW_SECONDS);
+  const [showExtensionWindow, setShowExtensionWindow] = useState(false);
+  const extensionTriggered = useRef(false);
+  const pulseAnim = useRef(new Animated.Value(1)).current;
 
   const { data: session, isLoading: sessionLoading } = useQuery({
     queryKey: ["chat-session", orderId],
@@ -70,6 +76,14 @@ export default function LiveChatScreen() {
     },
   });
 
+  const endSessionMutation = useMutation({
+    mutationFn: (sessionId: string) =>
+      apiFetch(`api/admin/chat/${sessionId}/end`, { method: "POST", token }),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["chat-session", orderId] });
+    },
+  });
+
   function handleSend() {
     if (!messageText.trim() || !session?.id || session.status !== "active") return;
     sendMutation.mutate(messageText.trim());
@@ -101,6 +115,38 @@ export default function LiveChatScreen() {
   const timerProgress = totalSeconds > 0 ? 1 - (remainingSeconds / totalSeconds) : 0;
 
   const isExpired = remainingSeconds <= 0 && session?.status === "active";
+
+  useEffect(() => {
+    if (isExpired && session?.status === "active" && !extensionTriggered.current && !isAdmin) {
+      extensionTriggered.current = true;
+      setShowExtensionWindow(true);
+      setExtensionCountdown(EXTENSION_WINDOW_SECONDS);
+      try { Haptics.notificationAsync(Haptics.NotificationFeedbackType.Warning); } catch {}
+
+      Animated.loop(
+        Animated.sequence([
+          Animated.timing(pulseAnim, { toValue: 1.05, duration: 800, useNativeDriver: false }),
+          Animated.timing(pulseAnim, { toValue: 1, duration: 800, useNativeDriver: false }),
+        ])
+      ).start();
+    }
+  }, [isExpired, session?.status, isAdmin]);
+
+  useEffect(() => {
+    if (!showExtensionWindow) return;
+    if (extensionCountdown <= 0) {
+      setShowExtensionWindow(false);
+      return;
+    }
+    const timer = setTimeout(() => {
+      setExtensionCountdown(prev => prev - 1);
+    }, 1000);
+    return () => clearTimeout(timer);
+  }, [showExtensionWindow, extensionCountdown]);
+
+  function handleBuyMoreTime() {
+    router.push({ pathname: "/service/[slug]", params: { slug: "live-chat" } });
+  }
 
   function renderMessage({ item }: { item: any }) {
     const isMe = item.senderId === user?.id;
@@ -289,11 +335,52 @@ export default function LiveChatScreen() {
           </View>
         )}
 
-        {isExpired && session.status === "active" && (
+        {isExpired && session.status === "active" && !showExtensionWindow && (
           <View style={[styles.expiredBar, { paddingBottom: bottomPadding + 8 }]}>
             <Ionicons name="time-outline" size={18} color={Colors.dark.error} />
             <Text style={styles.expiredText}>Session time has expired</Text>
           </View>
+        )}
+
+        {showExtensionWindow && !isAdmin && (
+          <Animated.View style={[styles.extensionOverlay, { transform: [{ scale: pulseAnim }] }]}>
+            <View style={styles.extensionCard}>
+              <View style={styles.extensionTimerCircle}>
+                <Text style={styles.extensionTimerNumber}>{extensionCountdown}</Text>
+                <Text style={styles.extensionTimerLabel}>sec</Text>
+              </View>
+
+              <Text style={styles.extensionTitle}>Session Time Expired</Text>
+              <Text style={styles.extensionText}>
+                Your chat session has ended. Would you like to continue chatting with your advisor?
+              </Text>
+
+              <Pressable
+                onPress={handleBuyMoreTime}
+                style={({ pressed }) => [styles.buyMoreBtn, pressed && { opacity: 0.85 }]}
+              >
+                <LinearGradient
+                  colors={["#D4A853", "#B08930"]}
+                  style={styles.buyMoreBtnGradient}
+                  start={{ x: 0, y: 0 }}
+                  end={{ x: 1, y: 0 }}
+                >
+                  <Ionicons name="add-circle" size={20} color="#0A0A1A" />
+                  <Text style={styles.buyMoreBtnText}>Purchase More Time</Text>
+                </LinearGradient>
+              </Pressable>
+
+              <Pressable
+                onPress={() => {
+                  setShowExtensionWindow(false);
+                  router.push("/(main)/orders");
+                }}
+                style={({ pressed }) => [styles.endSessionBtn, pressed && { opacity: 0.7 }]}
+              >
+                <Text style={styles.endSessionBtnText}>End Session</Text>
+              </Pressable>
+            </View>
+          </Animated.View>
         )}
       </View>
     </KeyboardAvoidingView>
@@ -561,5 +648,89 @@ const styles = StyleSheet.create({
     color: "#FF5252",
     fontWeight: "700",
     fontSize: 15,
+  },
+  extensionOverlay: {
+    position: "absolute",
+    top: 0,
+    left: 0,
+    right: 0,
+    bottom: 0,
+    backgroundColor: "rgba(10, 10, 26, 0.92)",
+    justifyContent: "center",
+    alignItems: "center",
+    zIndex: 100,
+    padding: 20,
+  },
+  extensionCard: {
+    backgroundColor: Colors.dark.surface,
+    borderRadius: 24,
+    padding: 32,
+    alignItems: "center",
+    width: "100%",
+    maxWidth: 340,
+    borderWidth: 1,
+    borderColor: "rgba(212, 168, 83, 0.3)",
+    gap: 12,
+  },
+  extensionTimerCircle: {
+    width: 80,
+    height: 80,
+    borderRadius: 40,
+    borderWidth: 3,
+    borderColor: Colors.dark.error,
+    alignItems: "center",
+    justifyContent: "center",
+    marginBottom: 8,
+  },
+  extensionTimerNumber: {
+    fontSize: 28,
+    fontWeight: "800",
+    color: Colors.dark.error,
+  },
+  extensionTimerLabel: {
+    fontSize: 11,
+    color: Colors.dark.error,
+    fontWeight: "600",
+    marginTop: -4,
+  },
+  extensionTitle: {
+    fontFamily: "Cinzel_700Bold",
+    fontSize: 18,
+    color: Colors.dark.text,
+    textAlign: "center",
+  },
+  extensionText: {
+    fontSize: 14,
+    color: Colors.dark.textSecondary,
+    textAlign: "center",
+    lineHeight: 20,
+  },
+  buyMoreBtn: {
+    borderRadius: 14,
+    overflow: "hidden",
+    width: "100%",
+    marginTop: 8,
+  },
+  buyMoreBtnGradient: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "center",
+    gap: 8,
+    paddingVertical: 16,
+    borderRadius: 14,
+  },
+  buyMoreBtnText: {
+    color: "#0A0A1A",
+    fontSize: 16,
+    fontWeight: "700",
+  },
+  endSessionBtn: {
+    paddingVertical: 12,
+    paddingHorizontal: 24,
+  },
+  endSessionBtnText: {
+    color: Colors.dark.textSecondary,
+    fontSize: 14,
+    fontWeight: "600",
   },
 });
