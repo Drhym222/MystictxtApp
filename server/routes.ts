@@ -11,8 +11,9 @@ import {
   getRingingChatSessions, acceptChatSession, endChatSession, addChatMessage,
   getChatMessages, getLiveChatAvailability, getUserById,
 } from "./storage";
-import { registerSchema, loginSchema, createOrderSchema, orders } from "@shared/schema";
+import { registerSchema, loginSchema, createOrderSchema, orders, orderIntake, chatSessions, notifications, users } from "@shared/schema";
 import { db } from "./db";
+import { eq } from "drizzle-orm";
 
 const JWT_SECRET = process.env.SESSION_SECRET || "mystic-secret-key-change-me";
 
@@ -351,9 +352,33 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
   app.get("/api/chat/session/:orderId", authMiddleware, async (req: Request, res: Response) => {
     try {
-      const session = await getChatSessionByOrderId(req.params.orderId);
-      if (!session) return res.json(null);
-      res.json(session);
+      let session = await getChatSessionByOrderId(req.params.orderId);
+      if (!session) {
+        const order = await getOrderById(req.params.orderId);
+        if (order && order.status === "paid" && order.service?.slug === "live-chat") {
+          const [intake] = await db.select().from(orderIntake).where(eq(orderIntake.orderId, order.id));
+          const chatMinutes = (intake?.detailsJson as any)?.chatMinutes || 5;
+          const [newSession] = await db.insert(chatSessions).values({
+            orderId: order.id,
+            clientId: order.clientId,
+            purchasedMinutes: chatMinutes,
+            status: "ringing",
+          }).returning();
+          session = newSession;
+
+          const adminUsers = await db.select().from(users).where(eq(users.role, "admin"));
+          for (const admin of adminUsers) {
+            await db.insert(notifications).values({
+              userId: admin.id,
+              type: "live_chat_ringing",
+              title: "Incoming Live Chat",
+              body: `${intake?.fullName || 'A client'} is requesting a ${chatMinutes}-minute live chat session!`,
+              orderId: order.id,
+            });
+          }
+        }
+      }
+      res.json(session || null);
     } catch (err) {
       res.status(500).json({ message: "Failed to get session" });
     }
