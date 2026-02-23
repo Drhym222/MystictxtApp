@@ -5,6 +5,7 @@ import { router, useLocalSearchParams } from "expo-router";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { Ionicons } from "@expo/vector-icons";
+import * as Haptics from "expo-haptics";
 import { useAuth } from "@/lib/auth-context";
 import { apiFetch } from "@/lib/api";
 import Colors from "@/constants/colors";
@@ -45,6 +46,27 @@ export default function LiveChatScreen() {
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["chat-messages", session?.id] });
       setMessageText("");
+    },
+  });
+
+  const acceptMutation = useMutation({
+    mutationFn: (sessionId: string) =>
+      apiFetch(`api/admin/chat/${sessionId}/accept`, { method: "POST", token }),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["chat-session", orderId] });
+      queryClient.invalidateQueries({ queryKey: ["admin-ringing-chats"] });
+      queryClient.invalidateQueries({ queryKey: ["admin-active-chat"] });
+      try { Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success); } catch {}
+    },
+  });
+
+  const declineMutation = useMutation({
+    mutationFn: (sessionId: string) =>
+      apiFetch(`api/admin/chat/${sessionId}/end`, { method: "POST", token }),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["chat-session", orderId] });
+      queryClient.invalidateQueries({ queryKey: ["admin-ringing-chats"] });
+      router.back();
     },
   });
 
@@ -169,10 +191,39 @@ export default function LiveChatScreen() {
         {session.status === "ringing" && (
           <View style={styles.waitingCard}>
             <ActivityIndicator size="small" color={Colors.dark.accent} />
-            <Text style={styles.waitingTitle}>Waiting for advisor...</Text>
-            <Text style={styles.waitingText}>
-              Your {session.purchasedMinutes}-minute session is ready. The timer will start once the advisor connects.
+            <Text style={styles.waitingTitle}>
+              {isAdmin ? "Client is waiting..." : "Waiting for advisor..."}
             </Text>
+            <Text style={styles.waitingText}>
+              {isAdmin
+                ? `A client is requesting a ${session.purchasedMinutes}-minute live chat session.`
+                : `Your ${session.purchasedMinutes}-minute session is ready. The timer will start once the advisor connects.`}
+            </Text>
+            {isAdmin && (
+              <View style={styles.ringingActions}>
+                <Pressable
+                  onPress={() => acceptMutation.mutate(session.id)}
+                  disabled={acceptMutation.isPending}
+                  style={({ pressed }) => [styles.acceptChatBtn, pressed && { opacity: 0.8 }]}
+                >
+                  <LinearGradient colors={["#4CAF50", "#388E3C"]} style={styles.acceptChatBtnGradient}>
+                    {acceptMutation.isPending ? (
+                      <ActivityIndicator size="small" color="#fff" />
+                    ) : (
+                      <Ionicons name="checkmark-circle" size={20} color="#fff" />
+                    )}
+                    <Text style={styles.acceptChatBtnText}>Accept Chat</Text>
+                  </LinearGradient>
+                </Pressable>
+                <Pressable
+                  onPress={() => declineMutation.mutate(session.id)}
+                  disabled={declineMutation.isPending}
+                  style={({ pressed }) => [styles.declineChatBtn, pressed && { opacity: 0.8 }]}
+                >
+                  <Text style={styles.declineChatBtnText}>Decline</Text>
+                </Pressable>
+              </View>
+            )}
           </View>
         )}
 
@@ -468,5 +519,44 @@ const styles = StyleSheet.create({
     color: "#0A0A1A",
     fontWeight: "700",
     fontSize: 14,
+  },
+  ringingActions: {
+    flexDirection: "row",
+    gap: 12,
+    marginTop: 8,
+    width: "100%",
+  },
+  acceptChatBtn: {
+    flex: 1,
+    borderRadius: 14,
+    overflow: "hidden",
+  },
+  acceptChatBtnGradient: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "center",
+    gap: 8,
+    paddingVertical: 14,
+    borderRadius: 14,
+  },
+  acceptChatBtnText: {
+    color: "#fff",
+    fontWeight: "700",
+    fontSize: 15,
+  },
+  declineChatBtn: {
+    paddingVertical: 14,
+    paddingHorizontal: 20,
+    borderRadius: 14,
+    borderWidth: 1,
+    borderColor: "rgba(255, 82, 82, 0.3)",
+    backgroundColor: "rgba(255, 82, 82, 0.08)",
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  declineChatBtnText: {
+    color: "#FF5252",
+    fontWeight: "700",
+    fontSize: 15,
   },
 });
