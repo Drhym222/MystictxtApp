@@ -494,8 +494,12 @@ export async function registerRoutes(app: Express): Promise<Server> {
         }
       }
 
-      const appUrl = `https://${process.env.REPLIT_DEV_DOMAIN || 'mystic-text-portals.replit.app'}`;
-      const redirectPath = isChat && orderId ? `/live-chat/${orderId}` : orderId ? `/order/${orderId}` : `/`;
+      const productionDomain = 'mystic-text-portals.replit.app';
+      const appBase = process.env.NODE_ENV === 'production'
+        ? `https://${productionDomain}`
+        : `https://${process.env.REPLIT_DEV_DOMAIN || productionDomain}`;
+      const path = isChat && orderId ? `/live-chat/${orderId}` : orderId ? `/order/${orderId}` : `/`;
+      const fullRedirectUrl = `${appBase}${path}`;
       
       res.send(`
         <!DOCTYPE html>
@@ -517,11 +521,11 @@ export async function registerRoutes(app: Express): Promise<Server> {
             <div class="spinner"></div>
             <h1>Payment Successful!</h1>
             <p>${isChat ? 'Your live chat session is being set up. Redirecting...' : 'Your order has been placed. Redirecting...'}</p>
-            <a class="btn" href="${redirectPath}" id="returnBtn">Return to MysticTxt</a>
+            <a class="btn" href="${fullRedirectUrl}" id="returnBtn">Return to MysticTxt</a>
           </div>
           <script>
             setTimeout(function() {
-              window.location.href = "${redirectPath}";
+              window.location.href = "${fullRedirectUrl}";
             }, 2500);
           </script>
         </body>
