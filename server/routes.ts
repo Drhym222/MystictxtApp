@@ -384,8 +384,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
         return res.status(500).json({ message: "Payment not configured" });
       }
 
-      const prodDomain = process.env.REPL_SLUG ? `${process.env.REPL_SLUG}.replit.app` : null;
-      const host = prodDomain || process.env.REPLIT_DEV_DOMAIN || req.get('host') || 'mystic-text-portals.replit.app';
+      const host = req.get('host') || process.env.REPLIT_DEV_DOMAIN || 'mystic-text-portals.replit.app';
       const baseUrl = `https://${host}`;
 
       const exchangeRate = 1580;
@@ -494,10 +493,8 @@ export async function registerRoutes(app: Express): Promise<Server> {
         }
       }
 
-      const productionDomain = 'mystic-text-portals.replit.app';
-      const appBase = process.env.NODE_ENV === 'production'
-        ? `https://${productionDomain}`
-        : `https://${process.env.REPLIT_DEV_DOMAIN || productionDomain}`;
+      const callbackHost = req.get('host') || process.env.REPLIT_DEV_DOMAIN || 'mystic-text-portals.replit.app';
+      const appBase = `https://${callbackHost}`;
       const path = isChat && orderId ? `/live-chat/${orderId}` : orderId ? `/order/${orderId}` : `/`;
       const fullRedirectUrl = `${appBase}${path}`;
       
