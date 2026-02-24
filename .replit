@@ -77,3 +77,6 @@ ensurePreviewReachable = "/status"
 
 [userenv.production]
 EXPO_PUBLIC_DOMAIN = "mystic-text-portals.replit.app"
+
+[userenv.shared]
+EXPO_PUBLIC_GOOGLE_CLIENT_ID = "497199156634-3ssskn8808d511h8jqk0ckc1hr8t61uj.apps.googleusercontent.com"
