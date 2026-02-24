@@ -1,5 +1,5 @@
 import React from "react";
-import { View, Text, Pressable, StyleSheet, Platform, ScrollView } from "react-native";
+import { View, Text, Pressable, StyleSheet, Platform, ScrollView, Linking } from "react-native";
 import { LinearGradient } from "expo-linear-gradient";
 import { router } from "expo-router";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
@@ -81,7 +81,25 @@ export default function ProfileScreen() {
 
         <View style={styles.menuSection}>
           <Pressable
-            style={({ pressed }) => [styles.menuItem, styles.logoutItem, pressed && styles.menuPressed]}
+            style={({ pressed }) => [styles.menuItem, styles.lastMenuItem, pressed && styles.menuPressed]}
+            onPress={() => Linking.openURL("mailto:admin@mystictxt.com?subject=MysticTxt Support Request")}
+          >
+            <View style={styles.menuLeft}>
+              <View style={[styles.menuIcon, { backgroundColor: "rgba(155, 89, 182, 0.15)" }]}>
+                <Ionicons name="help-circle-outline" size={20} color="#9B59B6" />
+              </View>
+              <View>
+                <Text style={styles.menuLabel}>Help & Support</Text>
+                <Text style={styles.menuSubLabel}>admin@mystictxt.com</Text>
+              </View>
+            </View>
+            <Ionicons name="chevron-forward" size={20} color={Colors.dark.textSecondary} />
+          </Pressable>
+        </View>
+
+        <View style={styles.menuSection}>
+          <Pressable
+            style={({ pressed }) => [styles.menuItem, styles.lastMenuItem, pressed && styles.menuPressed]}
             onPress={handleLogout}
           >
             <View style={styles.menuLeft}>
@@ -168,8 +186,13 @@ const styles = StyleSheet.create({
   menuPressed: {
     backgroundColor: "rgba(255,255,255,0.03)",
   },
-  logoutItem: {
+  lastMenuItem: {
     borderBottomWidth: 0,
+  },
+  menuSubLabel: {
+    fontSize: 12,
+    color: Colors.dark.textSecondary,
+    marginTop: 2,
   },
   menuLeft: {
     flexDirection: "row",
