@@ -11,13 +11,17 @@ interface AuthUser {
   role: string;
 }
 
+interface AuthResult { success: boolean; error?: string }
+
 interface AuthContextValue {
   user: AuthUser | null;
   token: string | null;
   isLoading: boolean;
-  login: (email: string, password: string) => Promise<{ success: boolean; error?: string }>;
-  register: (email: string, password: string) => Promise<{ success: boolean; error?: string }>;
-  googleSignIn: (idToken: string) => Promise<{ success: boolean; error?: string }>;
+  login: (email: string, password: string) => Promise<AuthResult>;
+  register: (email: string, password: string) => Promise<AuthResult>;
+  verifyRegister: (email: string, code: string, password: string) => Promise<AuthResult>;
+  resetPassword: (email: string, code: string, newPassword: string) => Promise<AuthResult>;
+  googleSignIn: (idToken: string) => Promise<AuthResult>;
   logout: () => Promise<void>;
 }
 
@@ -186,6 +190,74 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     }
   }
 
+  async function verifyRegister(email: string, code: string, password: string) {
+    try {
+      const baseUrl = getApiUrl();
+      const res = await fetch(`${baseUrl}api/auth/verify-register`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ email, code, password }),
+      });
+
+      let data: any;
+      try {
+        const text = await res.text();
+        data = JSON.parse(text);
+      } catch {
+        return { success: false, error: 'Server returned an invalid response' };
+      }
+
+      if (!res.ok) {
+        return { success: false, error: data.message || 'Verification failed' };
+      }
+
+      if (!data.token) {
+        return { success: false, error: 'Server response missing token' };
+      }
+
+      await saveToken(data.token);
+      setToken(data.token);
+      setUser(data.user);
+      return { success: true };
+    } catch (err: any) {
+      return { success: false, error: `Verification error: ${err.message}` };
+    }
+  }
+
+  async function resetPassword(email: string, code: string, newPassword: string) {
+    try {
+      const baseUrl = getApiUrl();
+      const res = await fetch(`${baseUrl}api/auth/reset-password`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ email, code, newPassword }),
+      });
+
+      let data: any;
+      try {
+        const text = await res.text();
+        data = JSON.parse(text);
+      } catch {
+        return { success: false, error: 'Server returned an invalid response' };
+      }
+
+      if (!res.ok) {
+        return { success: false, error: data.message || 'Password reset failed' };
+      }
+
+      if (!data.token) {
+        return { success: false, error: 'Server response missing token' };
+      }
+
+      await saveToken(data.token);
+      setToken(data.token);
+      setUser(data.user);
+      return { success: true };
+    } catch (err: any) {
+      return { success: false, error: `Reset error: ${err.message}` };
+    }
+  }
+
   async function googleSignIn(idToken: string) {
     try {
       const baseUrl = getApiUrl();
@@ -227,7 +299,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   }
 
   const value = useMemo(() => ({
-    user, token, isLoading, login, register, googleSignIn, logout,
+    user, token, isLoading, login, register, verifyRegister, resetPassword, googleSignIn, logout,
   }), [user, token, isLoading]);
 
   return (
