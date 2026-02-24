@@ -9,7 +9,7 @@ import { useAuth } from "@/lib/auth-context";
 import { apiFetch } from "@/lib/api";
 import Colors from "@/constants/colors";
 import * as Haptics from "expo-haptics";
-import { Audio } from "expo-av";
+import { useAudioPlayer, AudioModule } from "expo-audio";
 
 function IncomingCallCard({ chat, onAccept, onDecline, isAccepting }: {
   chat: any;
@@ -20,7 +20,9 @@ function IncomingCallCard({ chat, onAccept, onDecline, isAccepting }: {
   const ringAnim = useRef(new Animated.Value(0)).current;
   const scaleAnim = useRef(new Animated.Value(1)).current;
   const glowAnim = useRef(new Animated.Value(0)).current;
-  const soundRef = useRef<Audio.Sound | null>(null);
+
+  const ringtoneSource = require("@/assets/ringtone.mp3");
+  const player = useAudioPlayer(ringtoneSource);
 
   useEffect(() => {
     const ringLoop = Animated.loop(
@@ -55,45 +57,23 @@ function IncomingCallCard({ chat, onAccept, onDecline, isAccepting }: {
       try { Haptics.notificationAsync(Haptics.NotificationFeedbackType.Warning); } catch {}
     }, 2000);
 
-    let isMounted = true;
-    (async () => {
-      try {
-        await Audio.setAudioModeAsync({
-          playsInSilentModeIOS: true,
-          staysActiveInBackground: false,
-        });
-        const { sound } = await Audio.Sound.createAsync(
-          require("@/assets/ringtone.mp3"),
-          { isLooping: true, volume: 1.0, shouldPlay: true }
-        );
-        if (isMounted) {
-          soundRef.current = sound;
-        } else {
-          await sound.unloadAsync();
-        }
-      } catch {}
-    })();
+    try {
+      player.loop = true;
+      player.volume = 1.0;
+      player.play();
+    } catch {}
 
     return () => {
-      isMounted = false;
       ringLoop.stop();
       pulseLoop.stop();
       glowLoop.stop();
       clearInterval(hapticInterval);
-      if (soundRef.current) {
-        soundRef.current.stopAsync().then(() => soundRef.current?.unloadAsync()).catch(() => {});
-      }
+      try { player.pause(); } catch {}
     };
   }, []);
 
-  const stopSound = async () => {
-    if (soundRef.current) {
-      try {
-        await soundRef.current.stopAsync();
-        await soundRef.current.unloadAsync();
-        soundRef.current = null;
-      } catch {}
-    }
+  const stopSound = () => {
+    try { player.pause(); } catch {}
   };
 
   const rotateInterpolate = ringAnim.interpolate({
