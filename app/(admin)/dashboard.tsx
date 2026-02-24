@@ -9,28 +9,137 @@ import { useAuth } from "@/lib/auth-context";
 import { apiFetch } from "@/lib/api";
 import Colors from "@/constants/colors";
 import * as Haptics from "expo-haptics";
+import { useAudioPlayer, AudioModule } from "expo-audio";
 
-function PulsingDot() {
-  const pulseAnim = useRef(new Animated.Value(1)).current;
+function IncomingCallCard({ chat, onAccept, onDecline, isAccepting }: {
+  chat: any;
+  onAccept: () => void;
+  onDecline: () => void;
+  isAccepting: boolean;
+}) {
+  const ringAnim = useRef(new Animated.Value(0)).current;
+  const scaleAnim = useRef(new Animated.Value(1)).current;
+  const glowAnim = useRef(new Animated.Value(0)).current;
+
+  const ringtoneSource = require("@/assets/ringtone.mp3");
+  const player = useAudioPlayer(ringtoneSource);
+
   useEffect(() => {
-    const loop = Animated.loop(
+    const ringLoop = Animated.loop(
       Animated.sequence([
-        Animated.timing(pulseAnim, { toValue: 1.6, duration: 600, useNativeDriver: Platform.OS !== "web" }),
-        Animated.timing(pulseAnim, { toValue: 1, duration: 600, useNativeDriver: Platform.OS !== "web" }),
+        Animated.timing(ringAnim, { toValue: 1, duration: 150, useNativeDriver: false }),
+        Animated.timing(ringAnim, { toValue: -1, duration: 150, useNativeDriver: false }),
+        Animated.timing(ringAnim, { toValue: 1, duration: 150, useNativeDriver: false }),
+        Animated.timing(ringAnim, { toValue: 0, duration: 150, useNativeDriver: false }),
+        Animated.delay(1000),
       ])
     );
-    loop.start();
-    return () => loop.stop();
+
+    const pulseLoop = Animated.loop(
+      Animated.sequence([
+        Animated.timing(scaleAnim, { toValue: 1.08, duration: 600, useNativeDriver: false }),
+        Animated.timing(scaleAnim, { toValue: 1, duration: 600, useNativeDriver: false }),
+      ])
+    );
+
+    const glowLoop = Animated.loop(
+      Animated.sequence([
+        Animated.timing(glowAnim, { toValue: 1, duration: 800, useNativeDriver: false }),
+        Animated.timing(glowAnim, { toValue: 0, duration: 800, useNativeDriver: false }),
+      ])
+    );
+
+    ringLoop.start();
+    pulseLoop.start();
+    glowLoop.start();
+
+    const hapticInterval = setInterval(() => {
+      try { Haptics.notificationAsync(Haptics.NotificationFeedbackType.Warning); } catch {}
+    }, 2000);
+
+    try {
+      player.loop = true;
+      player.volume = 1.0;
+      player.play();
+    } catch {}
+
+    return () => {
+      ringLoop.stop();
+      pulseLoop.stop();
+      glowLoop.stop();
+      clearInterval(hapticInterval);
+      try { player.pause(); } catch {}
+    };
   }, []);
+
+  const stopSound = () => {
+    try { player.pause(); } catch {}
+  };
+
+  const rotateInterpolate = ringAnim.interpolate({
+    inputRange: [-1, 0, 1],
+    outputRange: ["-15deg", "0deg", "15deg"],
+  });
+
+  const glowOpacity = glowAnim.interpolate({
+    inputRange: [0, 1],
+    outputRange: [0.3, 0.8],
+  });
+
+  const clientName = chat.order?.intake?.fullName || "Client";
+  const minutes = chat.purchasedMinutes || 5;
+
   return (
-    <View style={{ width: 24, height: 24, alignItems: "center", justifyContent: "center" }}>
-      <Animated.View style={{
-        width: 12, height: 12, borderRadius: 6,
-        backgroundColor: "#FF5252",
-        transform: [{ scale: pulseAnim }],
-        opacity: pulseAnim.interpolate({ inputRange: [1, 1.6], outputRange: [1, 0.4] }),
-      }} />
-    </View>
+    <Animated.View style={[styles.incomingCallCard, { transform: [{ scale: scaleAnim }] }]}>
+      <Animated.View style={[styles.callGlowRing, { opacity: glowOpacity }]} />
+      <LinearGradient
+        colors={["rgba(76, 175, 80, 0.15)", "rgba(76, 175, 80, 0.05)", "rgba(10, 10, 26, 0.95)"]}
+        style={styles.callCardGradient}
+      >
+        <Animated.View style={{ transform: [{ rotate: rotateInterpolate }] }}>
+          <View style={styles.callIconCircle}>
+            <Ionicons name="call" size={28} color="#4CAF50" />
+          </View>
+        </Animated.View>
+
+        <Text style={styles.callLabel}>INCOMING LIVE CHAT</Text>
+        <Text style={styles.callerName}>{clientName}</Text>
+        <Text style={styles.callDuration}>{minutes}-minute session</Text>
+
+        <View style={styles.callActions}>
+          <Pressable
+            onPress={() => {
+              stopSound();
+              onDecline();
+            }}
+            style={({ pressed }) => [styles.callDeclineBtn, pressed && { opacity: 0.8 }]}
+          >
+            <View style={styles.callDeclineBtnInner}>
+              <Ionicons name="close" size={24} color="#fff" />
+            </View>
+            <Text style={styles.callActionLabel}>Decline</Text>
+          </Pressable>
+
+          <Pressable
+            onPress={() => {
+              stopSound();
+              onAccept();
+            }}
+            disabled={isAccepting}
+            style={({ pressed }) => [styles.callAcceptBtn, pressed && { opacity: 0.8 }]}
+          >
+            <View style={styles.callAcceptBtnInner}>
+              {isAccepting ? (
+                <ActivityIndicator size="small" color="#fff" />
+              ) : (
+                <Ionicons name="chatbubbles" size={24} color="#fff" />
+              )}
+            </View>
+            <Text style={styles.callActionLabel}>Accept</Text>
+          </Pressable>
+        </View>
+      </LinearGradient>
+    </Animated.View>
   );
 }
 
@@ -95,6 +204,16 @@ export default function AdminDashboard() {
     },
   });
 
+  const declineChatMutation = useMutation({
+    mutationFn: (sessionId: string) =>
+      apiFetch(`api/admin/chat/${sessionId}/end`, { method: "POST", token }),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["admin-ringing-chats"] });
+      queryClient.invalidateQueries({ queryKey: ["admin-active-chat"] });
+      try { Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success); } catch {}
+    },
+  });
+
   const endChatMutation = useMutation({
     mutationFn: (sessionId: string) =>
       apiFetch(`api/admin/chat/${sessionId}/end`, { method: "POST", token }),
@@ -106,30 +225,17 @@ export default function AdminDashboard() {
     },
   });
 
-  useEffect(() => {
-    const ringingCount = (ringingChats || []).length;
-    if (ringingCount > 0 && ringingCount > prevRingingCount.current) {
-      try { Haptics.notificationAsync(Haptics.NotificationFeedbackType.Warning); } catch {}
-      const interval = setInterval(() => {
-        try { Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Heavy); } catch {}
-      }, 2000);
-      const timeout = setTimeout(() => clearInterval(interval), 10000);
-      return () => { clearInterval(interval); clearTimeout(timeout); };
-    }
-    prevRingingCount.current = ringingCount;
-  }, [(ringingChats || []).length]);
-
   const liveChatEnabled = chatSetting?.enabled || false;
 
   const allOrders = orders || [];
   const paidOrders = allOrders.filter((o: any) => o.status === "paid");
   const deliveredOrders = allOrders.filter((o: any) => o.status === "delivered");
-  const pendingOrders = allOrders.filter((o: any) => o.status === "pending");
   const totalRevenue = allOrders
     .filter((o: any) => o.status === "paid" || o.status === "delivered")
     .reduce((sum: number, o: any) => sum + o.priceUsdCents, 0);
 
   const recentOrders = allOrders.slice(0, 5);
+  const hasRingingChats = (ringingChats || []).length > 0;
 
   return (
     <View style={[styles.container, { paddingTop: topPadding }]}>
@@ -210,25 +316,16 @@ export default function AdminDashboard() {
               </Pressable>
             )}
 
-            {(ringingChats || []).length > 0 && (
+            {hasRingingChats && (
               <View style={styles.ringingSection}>
-                <Text style={styles.ringSectionTitle}>Incoming Chats</Text>
                 {(ringingChats || []).map((chat: any) => (
-                  <View key={chat.id} style={styles.ringingCard}>
-                    <PulsingDot />
-                    <View style={{ flex: 1 }}>
-                      <Text style={styles.ringingName}>{chat.order?.intake?.fullName || "Client"}</Text>
-                      <Text style={styles.ringingTime}>{chat.purchasedMinutes} min session</Text>
-                    </View>
-                    <Pressable
-                      onPress={() => acceptChatMutation.mutate(chat.id)}
-                      disabled={acceptChatMutation.isPending}
-                      style={({ pressed }) => [styles.acceptBtn, pressed && { opacity: 0.8 }]}
-                    >
-                      <Ionicons name="checkmark" size={18} color="#fff" />
-                      <Text style={styles.acceptBtnText}>Accept</Text>
-                    </Pressable>
-                  </View>
+                  <IncomingCallCard
+                    key={chat.id}
+                    chat={chat}
+                    onAccept={() => acceptChatMutation.mutate(chat.id)}
+                    onDecline={() => declineChatMutation.mutate(chat.id)}
+                    isAccepting={acceptChatMutation.isPending}
+                  />
                 ))}
               </View>
             )}
@@ -502,53 +599,91 @@ const styles = StyleSheet.create({
     fontWeight: "700",
   },
   ringingSection: {
-    gap: 10,
-  },
-  ringSectionTitle: {
-    fontSize: 14,
-    fontWeight: "700",
-    color: Colors.dark.warning,
-    textTransform: "uppercase",
-    letterSpacing: 1,
-  },
-  ringingCard: {
-    flexDirection: "row",
-    alignItems: "center",
-    backgroundColor: Colors.dark.card,
-    borderRadius: 14,
-    padding: 14,
     gap: 12,
-    borderWidth: 1,
-    borderColor: "rgba(243, 156, 18, 0.3)",
   },
-  ringingPulse: {
-    width: 12,
-    height: 12,
-    borderRadius: 6,
-    backgroundColor: Colors.dark.warning,
+  incomingCallCard: {
+    borderRadius: 20,
+    overflow: "hidden",
+    borderWidth: 2,
+    borderColor: "rgba(76, 175, 80, 0.5)",
   },
-  ringingName: {
-    fontSize: 14,
-    fontWeight: "600",
+  callGlowRing: {
+    position: "absolute",
+    top: -2,
+    left: -2,
+    right: -2,
+    bottom: -2,
+    borderRadius: 22,
+    borderWidth: 3,
+    borderColor: "#4CAF50",
+  },
+  callCardGradient: {
+    padding: 28,
+    alignItems: "center",
+    gap: 8,
+  },
+  callIconCircle: {
+    width: 64,
+    height: 64,
+    borderRadius: 32,
+    backgroundColor: "rgba(76, 175, 80, 0.2)",
+    borderWidth: 2,
+    borderColor: "rgba(76, 175, 80, 0.5)",
+    alignItems: "center",
+    justifyContent: "center",
+    marginBottom: 8,
+  },
+  callLabel: {
+    fontSize: 11,
+    fontWeight: "800",
+    color: "#4CAF50",
+    letterSpacing: 2,
+    textTransform: "uppercase",
+  },
+  callerName: {
+    fontFamily: "Cinzel_700Bold",
+    fontSize: 22,
     color: Colors.dark.text,
+    textAlign: "center",
   },
-  ringingTime: {
+  callDuration: {
+    fontSize: 14,
+    color: Colors.dark.textSecondary,
+  },
+  callActions: {
+    flexDirection: "row",
+    justifyContent: "center",
+    gap: 40,
+    marginTop: 16,
+    width: "100%",
+  },
+  callDeclineBtn: {
+    alignItems: "center",
+    gap: 6,
+  },
+  callDeclineBtnInner: {
+    width: 56,
+    height: 56,
+    borderRadius: 28,
+    backgroundColor: "#FF5252",
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  callAcceptBtn: {
+    alignItems: "center",
+    gap: 6,
+  },
+  callAcceptBtnInner: {
+    width: 56,
+    height: 56,
+    borderRadius: 28,
+    backgroundColor: "#4CAF50",
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  callActionLabel: {
     fontSize: 12,
     color: Colors.dark.textSecondary,
-    marginTop: 2,
-  },
-  acceptBtn: {
-    flexDirection: "row",
-    alignItems: "center",
-    gap: 4,
-    backgroundColor: Colors.dark.success,
-    paddingHorizontal: 14,
-    paddingVertical: 8,
-    borderRadius: 10,
-  },
-  acceptBtnText: {
-    color: "#fff",
-    fontSize: 13,
-    fontWeight: "700",
+    fontWeight: "600",
   },
 });

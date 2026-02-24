@@ -1,5 +1,5 @@
 import React from "react";
-import { View, Text, Pressable, StyleSheet, Platform, ScrollView } from "react-native";
+import { View, Text, Pressable, StyleSheet, Platform, ScrollView, Linking } from "react-native";
 import { LinearGradient } from "expo-linear-gradient";
 import { router } from "expo-router";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
@@ -12,13 +12,28 @@ import * as Haptics from "expo-haptics";
 
 export default function ProfileScreen() {
   const insets = useSafeAreaInsets();
-  const { user, logout } = useAuth();
+  const { user, token, logout } = useAuth();
   const topPadding = Platform.OS === "web" ? 67 : insets.top;
 
-  const { data: notifData } = useQuery({
-    queryKey: ["notif-count"],
-    queryFn: () => apiFetch("api/notifications/unread-count", { token: undefined }),
-    enabled: false,
+  const { data: activeSession } = useQuery({
+    queryKey: ["client-active-chat"],
+    queryFn: async () => {
+      const orders = await apiFetch("api/orders", { token });
+      const liveChatOrders = (orders || []).filter(
+        (o: any) => o.service?.slug === "live-chat" && (o.status === "paid" || o.status === "delivered")
+      );
+      for (const order of liveChatOrders) {
+        try {
+          const session = await apiFetch(`api/chat/session/${order.id}`, { token });
+          if (session && (session.status === "ringing" || session.status === "active")) {
+            return { session, order };
+          }
+        } catch {}
+      }
+      return null;
+    },
+    enabled: !!token,
+    refetchInterval: 10000,
   });
 
   async function handleLogout() {
@@ -51,6 +66,29 @@ export default function ProfileScreen() {
           </View>
         </View>
 
+        {activeSession && (
+          <Pressable
+            onPress={() => router.push({ pathname: "/live-chat/[orderId]", params: { orderId: activeSession.order.id } })}
+            style={({ pressed }) => [styles.activeChatBanner, pressed && { opacity: 0.85 }]}
+          >
+            <LinearGradient
+              colors={["rgba(76, 175, 80, 0.15)", "rgba(76, 175, 80, 0.05)"]}
+              style={styles.activeChatGradient}
+            >
+              <View style={styles.activeChatDot} />
+              <View style={{ flex: 1 }}>
+                <Text style={styles.activeChatTitle}>
+                  {activeSession.session.status === "ringing" ? "Chat Connecting..." : "Live Chat Active"}
+                </Text>
+                <Text style={styles.activeChatSub}>
+                  {activeSession.session.purchasedMinutes} min session - Tap to join
+                </Text>
+              </View>
+              <Ionicons name="chatbubbles" size={22} color={Colors.dark.success} />
+            </LinearGradient>
+          </Pressable>
+        )}
+
         <View style={styles.menuSection}>
           <Pressable
             style={({ pressed }) => [styles.menuItem, pressed && styles.menuPressed]}
@@ -77,11 +115,42 @@ export default function ProfileScreen() {
             </View>
             <Ionicons name="chevron-forward" size={20} color={Colors.dark.textSecondary} />
           </Pressable>
+
+          <Pressable
+            style={({ pressed }) => [styles.menuItem, styles.lastMenuItem, pressed && styles.menuPressed]}
+            onPress={() => router.push({ pathname: "/service/[slug]", params: { slug: "live-chat" } })}
+          >
+            <View style={styles.menuLeft}>
+              <View style={[styles.menuIcon, { backgroundColor: "rgba(76, 175, 80, 0.15)" }]}>
+                <Ionicons name="chatbubbles-outline" size={20} color={Colors.dark.success} />
+              </View>
+              <Text style={styles.menuLabel}>Live Chat</Text>
+            </View>
+            <Ionicons name="chevron-forward" size={20} color={Colors.dark.textSecondary} />
+          </Pressable>
         </View>
 
         <View style={styles.menuSection}>
           <Pressable
-            style={({ pressed }) => [styles.menuItem, styles.logoutItem, pressed && styles.menuPressed]}
+            style={({ pressed }) => [styles.menuItem, styles.lastMenuItem, pressed && styles.menuPressed]}
+            onPress={() => Linking.openURL("mailto:admin@mystictxt.com?subject=MysticTxt Support Request")}
+          >
+            <View style={styles.menuLeft}>
+              <View style={[styles.menuIcon, { backgroundColor: "rgba(155, 89, 182, 0.15)" }]}>
+                <Ionicons name="help-circle-outline" size={20} color="#9B59B6" />
+              </View>
+              <View>
+                <Text style={styles.menuLabel}>Help & Support</Text>
+                <Text style={styles.menuSubLabel}>admin@mystictxt.com</Text>
+              </View>
+            </View>
+            <Ionicons name="chevron-forward" size={20} color={Colors.dark.textSecondary} />
+          </Pressable>
+        </View>
+
+        <View style={styles.menuSection}>
+          <Pressable
+            style={({ pressed }) => [styles.menuItem, styles.lastMenuItem, pressed && styles.menuPressed]}
             onPress={handleLogout}
           >
             <View style={styles.menuLeft}>
@@ -149,6 +218,35 @@ const styles = StyleSheet.create({
     textTransform: "uppercase",
     letterSpacing: 1,
   },
+  activeChatBanner: {
+    borderRadius: 14,
+    overflow: "hidden",
+  },
+  activeChatGradient: {
+    flexDirection: "row",
+    alignItems: "center",
+    padding: 16,
+    borderRadius: 14,
+    borderWidth: 1,
+    borderColor: "rgba(76, 175, 80, 0.3)",
+    gap: 12,
+  },
+  activeChatDot: {
+    width: 12,
+    height: 12,
+    borderRadius: 6,
+    backgroundColor: Colors.dark.success,
+  },
+  activeChatTitle: {
+    fontSize: 14,
+    fontWeight: "700",
+    color: Colors.dark.success,
+  },
+  activeChatSub: {
+    fontSize: 12,
+    color: Colors.dark.textSecondary,
+    marginTop: 2,
+  },
   menuSection: {
     backgroundColor: Colors.dark.card,
     borderRadius: 14,
@@ -168,8 +266,13 @@ const styles = StyleSheet.create({
   menuPressed: {
     backgroundColor: "rgba(255,255,255,0.03)",
   },
-  logoutItem: {
+  lastMenuItem: {
     borderBottomWidth: 0,
+  },
+  menuSubLabel: {
+    fontSize: 12,
+    color: Colors.dark.textSecondary,
+    marginTop: 2,
   },
   menuLeft: {
     flexDirection: "row",

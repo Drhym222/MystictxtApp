@@ -12,9 +12,10 @@ import {
   getRingingChatSessions, acceptChatSession, endChatSession, addChatMessage,
   getChatMessages, getLiveChatAvailability, getUserById,
 } from "./storage";
-import { registerSchema, loginSchema, createOrderSchema, orders, orderIntake, chatSessions, notifications, users } from "@shared/schema";
+import { registerSchema, loginSchema, createOrderSchema, orders, orderIntake, chatSessions, notifications, users, otpCodes } from "@shared/schema";
 import { db } from "./db";
-import { eq } from "drizzle-orm";
+import { eq, and, gt, desc } from "drizzle-orm";
+import { sendOtpEmail } from "./email";
 
 const JWT_SECRET = process.env.SESSION_SECRET || "mystic-secret-key-change-me";
 
@@ -51,8 +52,154 @@ function adminMiddleware(req: Request, res: Response, next: Function) {
   next();
 }
 
+function generateOtp(): string {
+  return Math.floor(100000 + Math.random() * 900000).toString();
+}
+
 export async function registerRoutes(app: Express): Promise<Server> {
   await seedDatabase();
+
+  app.post("/api/auth/send-otp", async (req: Request, res: Response) => {
+    try {
+      const { email, purpose } = req.body;
+      if (!email || !purpose) {
+        return res.status(400).json({ message: "Email and purpose are required" });
+      }
+      if (!['verify', 'reset'].includes(purpose)) {
+        return res.status(400).json({ message: "Invalid purpose" });
+      }
+
+      const normalizedEmail = email.trim().toLowerCase();
+
+      if (purpose === 'verify') {
+        const existing = await getUserByEmail(normalizedEmail);
+        if (existing) {
+          return res.status(409).json({ message: "Email already registered" });
+        }
+      }
+
+      if (purpose === 'reset') {
+        const existing = await getUserByEmail(normalizedEmail);
+        if (!existing) {
+          return res.json({ message: "If that email exists, a code has been sent" });
+        }
+        if (existing.role === 'admin') {
+          return res.status(403).json({ message: "Admin accounts cannot reset password this way" });
+        }
+      }
+
+      const code = generateOtp();
+      const expiresAt = new Date(Date.now() + 10 * 60 * 1000);
+
+      await db.insert(otpCodes).values({
+        email: normalizedEmail,
+        code,
+        purpose,
+        expiresAt,
+      });
+
+      try {
+        await sendOtpEmail(normalizedEmail, code, purpose as 'verify' | 'reset');
+      } catch (emailErr) {
+        console.error("Failed to send OTP email:", emailErr);
+        return res.status(500).json({ message: "Failed to send verification email. Please try again." });
+      }
+
+      res.json({ message: "Verification code sent to your email" });
+    } catch (err) {
+      console.error("Send OTP error:", err);
+      res.status(500).json({ message: "Failed to send code" });
+    }
+  });
+
+  app.post("/api/auth/verify-register", async (req: Request, res: Response) => {
+    try {
+      const { email, code, password } = req.body;
+      if (!email || !code || !password) {
+        return res.status(400).json({ message: "Email, code, and password are required" });
+      }
+      if (password.length < 6) {
+        return res.status(400).json({ message: "Password must be at least 6 characters" });
+      }
+
+      const normalizedEmail = email.trim().toLowerCase();
+
+      const [otpRecord] = await db.select().from(otpCodes)
+        .where(and(
+          eq(otpCodes.email, normalizedEmail),
+          eq(otpCodes.code, code),
+          eq(otpCodes.purpose, 'verify'),
+          eq(otpCodes.used, false),
+          gt(otpCodes.expiresAt, new Date()),
+        ))
+        .orderBy(desc(otpCodes.createdAt))
+        .limit(1);
+
+      if (!otpRecord) {
+        return res.status(400).json({ message: "Invalid or expired code" });
+      }
+
+      const existing = await getUserByEmail(normalizedEmail);
+      if (existing) {
+        return res.status(409).json({ message: "Email already registered" });
+      }
+
+      await db.update(otpCodes).set({ used: true }).where(eq(otpCodes.id, otpRecord.id));
+
+      const passwordHash = await bcrypt.hash(password, 12);
+      const user = await createUser(normalizedEmail, passwordHash, "client");
+      const token = generateToken(user.id, user.role);
+      res.json({ token, user: { id: user.id, email: user.email, role: user.role } });
+    } catch (err) {
+      console.error("Verify register error:", err);
+      res.status(500).json({ message: "Registration failed" });
+    }
+  });
+
+  app.post("/api/auth/reset-password", async (req: Request, res: Response) => {
+    try {
+      const { email, code, newPassword } = req.body;
+      if (!email || !code || !newPassword) {
+        return res.status(400).json({ message: "Email, code, and new password are required" });
+      }
+      if (newPassword.length < 6) {
+        return res.status(400).json({ message: "Password must be at least 6 characters" });
+      }
+
+      const normalizedEmail = email.trim().toLowerCase();
+
+      const [otpRecord] = await db.select().from(otpCodes)
+        .where(and(
+          eq(otpCodes.email, normalizedEmail),
+          eq(otpCodes.code, code),
+          eq(otpCodes.purpose, 'reset'),
+          eq(otpCodes.used, false),
+          gt(otpCodes.expiresAt, new Date()),
+        ))
+        .orderBy(desc(otpCodes.createdAt))
+        .limit(1);
+
+      if (!otpRecord) {
+        return res.status(400).json({ message: "Invalid or expired code" });
+      }
+
+      const user = await getUserByEmail(normalizedEmail);
+      if (!user) {
+        return res.status(404).json({ message: "Account not found" });
+      }
+
+      await db.update(otpCodes).set({ used: true }).where(eq(otpCodes.id, otpRecord.id));
+
+      const passwordHash = await bcrypt.hash(newPassword, 12);
+      await db.update(users).set({ passwordHash }).where(eq(users.id, user.id));
+
+      const token = generateToken(user.id, user.role);
+      res.json({ token, user: { id: user.id, email: user.email, role: user.role } });
+    } catch (err) {
+      console.error("Reset password error:", err);
+      res.status(500).json({ message: "Password reset failed" });
+    }
+  });
 
   app.post("/api/auth/register", async (req: Request, res: Response) => {
     try {
@@ -105,6 +252,48 @@ export async function registerRoutes(app: Express): Promise<Server> {
       res.json({ id: user.id, email: user.email, role: user.role });
     } catch (err) {
       res.status(500).json({ message: "Failed to get user" });
+    }
+  });
+
+  app.post("/api/auth/google", async (req: Request, res: Response) => {
+    try {
+      const { idToken } = req.body;
+      if (!idToken) {
+        return res.status(400).json({ message: "Missing Google ID token" });
+      }
+
+      const googleClientId = process.env.EXPO_PUBLIC_GOOGLE_CLIENT_ID;
+      const tokenInfoUrl = `https://oauth2.googleapis.com/tokeninfo?id_token=${idToken}`;
+      const tokenRes = await globalThis.fetch(tokenInfoUrl);
+      if (!tokenRes.ok) {
+        return res.status(401).json({ message: "Invalid Google token" });
+      }
+      const tokenData = await tokenRes.json() as any;
+
+      if (googleClientId && tokenData.aud !== googleClientId) {
+        return res.status(401).json({ message: "Token audience mismatch" });
+      }
+
+      const email = tokenData.email?.toLowerCase();
+      if (!email) {
+        return res.status(400).json({ message: "No email in Google token" });
+      }
+
+      let user = await getUserByEmail(email);
+      if (!user) {
+        const randomHash = await bcrypt.hash(Math.random().toString(36), 10);
+        user = await createUser(email, randomHash, "client");
+      }
+
+      if (user.role === "admin") {
+        return res.status(403).json({ message: "Admin accounts cannot use Google Sign-In" });
+      }
+
+      const token = generateToken(user.id, user.role);
+      res.json({ token, user: { id: user.id, email: user.email, role: user.role } });
+    } catch (err) {
+      console.error("Google auth error:", err);
+      res.status(500).json({ message: "Google authentication failed" });
     }
   });
 

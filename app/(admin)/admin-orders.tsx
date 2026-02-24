@@ -1,5 +1,5 @@
 import React, { useState } from "react";
-import { View, Text, FlatList, Pressable, StyleSheet, Platform, ActivityIndicator, RefreshControl, TextInput, Modal } from "react-native";
+import { View, Text, FlatList, Pressable, StyleSheet, Platform, ActivityIndicator, RefreshControl, TextInput, Modal, KeyboardAvoidingView, ScrollView } from "react-native";
 import { LinearGradient } from "expo-linear-gradient";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
@@ -154,62 +154,75 @@ export default function AdminOrdersScreen() {
       )}
 
       <Modal visible={showModal} animationType="slide" transparent>
-        <View style={styles.modalOverlay}>
-          <View style={[styles.modalContent, { paddingBottom: Platform.OS === "web" ? 34 : insets.bottom + 16 }]}>
-            <View style={styles.modalHeader}>
-              <Text style={styles.modalTitle}>Deliver Reading</Text>
-              <Pressable onPress={() => setShowModal(false)}>
-                <Ionicons name="close" size={24} color={Colors.dark.text} />
-              </Pressable>
-            </View>
-
-            {selectedOrder && (
-              <View style={styles.modalOrderInfo}>
-                <Text style={styles.modalInfoText}>
-                  Order #{selectedOrder.id.slice(0, 8)} - {selectedOrder.service?.title}
-                </Text>
-                <Text style={styles.modalInfoClient}>{selectedOrder.intake?.fullName}</Text>
-                <Text style={styles.modalInfoQuestion}>{selectedOrder.intake?.question}</Text>
+        <KeyboardAvoidingView
+          style={{ flex: 1 }}
+          behavior={Platform.OS === "ios" ? "padding" : "height"}
+          keyboardVerticalOffset={0}
+        >
+          <View style={styles.modalOverlay}>
+            <View style={[styles.modalContent, { paddingBottom: Platform.OS === "web" ? 34 : insets.bottom + 16 }]}>
+              <View style={styles.modalHeader}>
+                <Text style={styles.modalTitle}>Deliver Reading</Text>
+                <Pressable onPress={() => setShowModal(false)}>
+                  <Ionicons name="close" size={24} color={Colors.dark.text} />
+                </Pressable>
               </View>
-            )}
 
-            <View style={styles.responseInputWrap}>
-              <TextInput
-                style={styles.responseInput}
-                placeholder="Write your reading response..."
-                placeholderTextColor={Colors.dark.textSecondary}
-                value={responseText}
-                onChangeText={setResponseText}
-                multiline
-                textAlignVertical="top"
-              />
-            </View>
-
-            <Pressable
-              onPress={handleDeliver}
-              disabled={updateMutation.isPending || !responseText.trim()}
-              style={({ pressed }) => [
-                styles.deliverSubmitBtn,
-                (!responseText.trim() || updateMutation.isPending) && { opacity: 0.5 },
-                pressed && { opacity: 0.85 },
-              ]}
-            >
-              <LinearGradient
-                colors={["#4CAF50", "#388E3C"]}
-                style={styles.deliverSubmitGradient}
+              <ScrollView
+                style={{ flex: 1 }}
+                contentContainerStyle={{ gap: 16 }}
+                keyboardShouldPersistTaps="handled"
+                showsVerticalScrollIndicator={false}
               >
-                {updateMutation.isPending ? (
-                  <ActivityIndicator color="#fff" />
-                ) : (
-                  <>
-                    <Ionicons name="checkmark-circle" size={18} color="#fff" />
-                    <Text style={styles.deliverSubmitText}>Mark as Delivered</Text>
-                  </>
+                {selectedOrder && (
+                  <View style={styles.modalOrderInfo}>
+                    <Text style={styles.modalInfoText}>
+                      Order #{selectedOrder.id.slice(0, 8)} - {selectedOrder.service?.title}
+                    </Text>
+                    <Text style={styles.modalInfoClient}>{selectedOrder.intake?.fullName}</Text>
+                    <Text style={styles.modalInfoQuestion}>{selectedOrder.intake?.question}</Text>
+                  </View>
                 )}
-              </LinearGradient>
-            </Pressable>
+
+                <View style={styles.responseInputWrap}>
+                  <TextInput
+                    style={styles.responseInput}
+                    placeholder="Write your reading response..."
+                    placeholderTextColor={Colors.dark.textSecondary}
+                    value={responseText}
+                    onChangeText={setResponseText}
+                    multiline
+                    textAlignVertical="top"
+                  />
+                </View>
+
+                <Pressable
+                  onPress={handleDeliver}
+                  disabled={updateMutation.isPending || !responseText.trim()}
+                  style={({ pressed }) => [
+                    styles.deliverSubmitBtn,
+                    (!responseText.trim() || updateMutation.isPending) && { opacity: 0.5 },
+                    pressed && { opacity: 0.85 },
+                  ]}
+                >
+                  <LinearGradient
+                    colors={["#4CAF50", "#388E3C"]}
+                    style={styles.deliverSubmitGradient}
+                  >
+                    {updateMutation.isPending ? (
+                      <ActivityIndicator color="#fff" />
+                    ) : (
+                      <>
+                        <Ionicons name="checkmark-circle" size={18} color="#fff" />
+                        <Text style={styles.deliverSubmitText}>Mark as Delivered</Text>
+                      </>
+                    )}
+                  </LinearGradient>
+                </Pressable>
+              </ScrollView>
+            </View>
           </View>
-        </View>
+        </KeyboardAvoidingView>
       </Modal>
     </View>
   );
