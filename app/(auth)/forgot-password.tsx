@@ -4,71 +4,28 @@ import { LinearGradient } from "expo-linear-gradient";
 import { router } from "expo-router";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { Ionicons } from "@expo/vector-icons";
-import * as Google from "expo-auth-session/providers/google";
-import * as WebBrowser from "expo-web-browser";
 import { KeyboardAwareScrollViewCompat } from "@/components/KeyboardAwareScrollViewCompat";
 import { useAuth } from "@/lib/auth-context";
 import { getApiUrl } from "@/lib/query-client";
 import Colors from "@/constants/colors";
 import { fetch } from "expo/fetch";
 
-WebBrowser.maybeCompleteAuthSession();
+type Step = "email" | "reset";
 
-type Step = "email" | "verify";
-
-export default function RegisterScreen() {
+export default function ForgotPasswordScreen() {
   const insets = useSafeAreaInsets();
-  const { verifyRegister, googleSignIn } = useAuth();
+  const { resetPassword } = useAuth();
   const [step, setStep] = useState<Step>("email");
   const [email, setEmail] = useState("");
   const [code, setCode] = useState("");
-  const [password, setPassword] = useState("");
+  const [newPassword, setNewPassword] = useState("");
   const [confirmPassword, setConfirmPassword] = useState("");
   const [loading, setLoading] = useState(false);
-  const [googleLoading, setGoogleLoading] = useState(false);
   const [error, setError] = useState("");
   const [successMsg, setSuccessMsg] = useState("");
   const topPadding = Platform.OS === "web" ? 67 : insets.top;
 
-  const [_request, response, promptAsync] = Google.useIdTokenAuthRequest({
-    clientId: process.env.EXPO_PUBLIC_GOOGLE_CLIENT_ID,
-  });
-
-  React.useEffect(() => {
-    if (response?.type === "success") {
-      const { id_token } = response.params;
-      handleGoogleAuth(id_token);
-    } else if (response?.type === "error") {
-      setError("Google sign-in was cancelled or failed");
-      setGoogleLoading(false);
-    }
-  }, [response]);
-
-  async function handleGoogleAuth(idToken: string) {
-    setGoogleLoading(true);
-    setError("");
-    const result = await googleSignIn(idToken);
-    setGoogleLoading(false);
-    if (result.success) {
-      router.dismissAll();
-      router.replace("/(main)/services");
-    } else {
-      setError(result.error || "Google sign-in failed");
-    }
-  }
-
-  async function handleGooglePress() {
-    setGoogleLoading(true);
-    setError("");
-    try {
-      await promptAsync();
-    } catch {
-      setError("Could not start Google sign-in");
-      setGoogleLoading(false);
-    }
-  }
-
-  async function handleSendOtp() {
+  async function handleSendCode() {
     if (!email.trim()) {
       setError("Please enter your email");
       return;
@@ -81,23 +38,23 @@ export default function RegisterScreen() {
       const res = await fetch(`${baseUrl}api/auth/send-otp`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ email: email.trim().toLowerCase(), purpose: "verify" }),
+        body: JSON.stringify({ email: email.trim().toLowerCase(), purpose: "reset" }),
       });
       const data = await res.json() as any;
       if (!res.ok) {
         setError(data.message || "Failed to send code");
       } else {
-        setSuccessMsg("A 6-digit code has been sent to your email");
-        setStep("verify");
+        setSuccessMsg("A reset code has been sent to your email");
+        setStep("reset");
       }
-    } catch (err: any) {
+    } catch {
       setError("Network error. Please try again.");
     } finally {
       setLoading(false);
     }
   }
 
-  async function handleResendOtp() {
+  async function handleResendCode() {
     setLoading(true);
     setError("");
     setSuccessMsg("");
@@ -106,7 +63,7 @@ export default function RegisterScreen() {
       const res = await fetch(`${baseUrl}api/auth/send-otp`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ email: email.trim().toLowerCase(), purpose: "verify" }),
+        body: JSON.stringify({ email: email.trim().toLowerCase(), purpose: "reset" }),
       });
       const data = await res.json() as any;
       if (!res.ok) {
@@ -121,33 +78,33 @@ export default function RegisterScreen() {
     }
   }
 
-  async function handleVerifyAndRegister() {
+  async function handleResetPassword() {
     if (!code.trim()) {
-      setError("Please enter the verification code");
+      setError("Please enter the reset code");
       return;
     }
-    if (!password.trim() || !confirmPassword.trim()) {
+    if (!newPassword.trim() || !confirmPassword.trim()) {
       setError("Please fill in all fields");
       return;
     }
-    if (password !== confirmPassword) {
+    if (newPassword !== confirmPassword) {
       setError("Passwords do not match");
       return;
     }
-    if (password.length < 6) {
+    if (newPassword.length < 6) {
       setError("Password must be at least 6 characters");
       return;
     }
     setLoading(true);
     setError("");
     setSuccessMsg("");
-    const result = await verifyRegister(email.trim().toLowerCase(), code.trim(), password);
+    const result = await resetPassword(email.trim().toLowerCase(), code.trim(), newPassword);
     setLoading(false);
     if (result.success) {
       router.dismissAll();
       router.replace("/(main)/services");
     } else {
-      setError(result.error || "Registration failed");
+      setError(result.error || "Password reset failed");
     }
   }
 
@@ -156,7 +113,7 @@ export default function RegisterScreen() {
       <LinearGradient colors={["#0A0A1A", "#12122A", "#1A1035"]} style={StyleSheet.absoluteFill} />
 
       <View style={styles.header}>
-        <Pressable onPress={() => step === "verify" ? setStep("email") : router.back()} hitSlop={20}>
+        <Pressable onPress={() => step === "reset" ? setStep("email") : router.back()} hitSlop={20}>
           <Ionicons name="chevron-back" size={28} color={Colors.dark.text} />
         </Pressable>
       </View>
@@ -167,9 +124,14 @@ export default function RegisterScreen() {
         bottomOffset={40}
       >
         <View style={styles.titleArea}>
-          <Text style={styles.title}>{step === "email" ? "Create Account" : "Verify Email"}</Text>
+          <View style={styles.iconCircle}>
+            <Ionicons name="key-outline" size={32} color={Colors.dark.accent} />
+          </View>
+          <Text style={styles.title}>{step === "email" ? "Forgot Password?" : "Reset Password"}</Text>
           <Text style={styles.subtitle}>
-            {step === "email" ? "Begin your mystical journey" : `Enter the code sent to ${email}`}
+            {step === "email"
+              ? "Enter your email and we'll send you a code to reset your password"
+              : `Enter the code sent to ${email}`}
           </Text>
         </View>
 
@@ -188,74 +150,49 @@ export default function RegisterScreen() {
         )}
 
         {step === "email" && (
-          <>
-            <Pressable
-              onPress={handleGooglePress}
-              disabled={googleLoading}
-              style={({ pressed }) => [styles.googleBtn, pressed && styles.btnPressed]}
-            >
-              <View style={styles.googleBtnInner}>
-                {googleLoading ? (
-                  <ActivityIndicator color="#333" size="small" />
-                ) : (
-                  <>
-                    <Ionicons name="logo-google" size={20} color="#DB4437" />
-                    <Text style={styles.googleBtnText}>Continue with Google</Text>
-                  </>
-                )}
-              </View>
-            </Pressable>
-
-            <View style={styles.divider}>
-              <View style={styles.dividerLine} />
-              <Text style={styles.dividerText}>or register with email</Text>
-              <View style={styles.dividerLine} />
-            </View>
-
-            <View style={styles.form}>
-              <View style={styles.inputGroup}>
-                <Text style={styles.label}>Email</Text>
-                <View style={styles.inputWrapper}>
-                  <Ionicons name="mail-outline" size={18} color={Colors.dark.textSecondary} />
-                  <TextInput
-                    style={styles.input}
-                    placeholder="your@email.com"
-                    placeholderTextColor={Colors.dark.textSecondary}
-                    value={email}
-                    onChangeText={setEmail}
-                    keyboardType="email-address"
-                    autoCapitalize="none"
-                    autoCorrect={false}
-                  />
-                </View>
-              </View>
-
-              <Pressable
-                onPress={handleSendOtp}
-                disabled={loading}
-                style={({ pressed }) => [styles.primaryBtn, pressed && styles.btnPressed]}
-              >
-                <LinearGradient
-                  colors={["#D4A853", "#B08930"]}
-                  style={styles.btnGradient}
-                  start={{ x: 0, y: 0 }}
-                  end={{ x: 1, y: 0 }}
-                >
-                  {loading ? (
-                    <ActivityIndicator color="#0A0A1A" />
-                  ) : (
-                    <Text style={styles.primaryBtnText}>Send Verification Code</Text>
-                  )}
-                </LinearGradient>
-              </Pressable>
-            </View>
-          </>
-        )}
-
-        {step === "verify" && (
           <View style={styles.form}>
             <View style={styles.inputGroup}>
-              <Text style={styles.label}>Verification Code</Text>
+              <Text style={styles.label}>Email</Text>
+              <View style={styles.inputWrapper}>
+                <Ionicons name="mail-outline" size={18} color={Colors.dark.textSecondary} />
+                <TextInput
+                  style={styles.input}
+                  placeholder="your@email.com"
+                  placeholderTextColor={Colors.dark.textSecondary}
+                  value={email}
+                  onChangeText={setEmail}
+                  keyboardType="email-address"
+                  autoCapitalize="none"
+                  autoCorrect={false}
+                />
+              </View>
+            </View>
+
+            <Pressable
+              onPress={handleSendCode}
+              disabled={loading}
+              style={({ pressed }) => [styles.primaryBtn, pressed && styles.btnPressed]}
+            >
+              <LinearGradient
+                colors={["#D4A853", "#B08930"]}
+                style={styles.btnGradient}
+                start={{ x: 0, y: 0 }}
+                end={{ x: 1, y: 0 }}
+              >
+                {loading ? (
+                  <ActivityIndicator color="#0A0A1A" />
+                ) : (
+                  <Text style={styles.primaryBtnText}>Send Reset Code</Text>
+                )}
+              </LinearGradient>
+            </Pressable>
+          </View>
+        )}
+
+        {step === "reset" && (
+          <View style={styles.form}>
+            <View style={styles.inputGroup}>
+              <Text style={styles.label}>Reset Code</Text>
               <View style={styles.inputWrapper}>
                 <Ionicons name="keypad-outline" size={18} color={Colors.dark.textSecondary} />
                 <TextInput
@@ -271,27 +208,27 @@ export default function RegisterScreen() {
             </View>
 
             <View style={styles.inputGroup}>
-              <Text style={styles.label}>Password</Text>
+              <Text style={styles.label}>New Password</Text>
               <View style={styles.inputWrapper}>
                 <Ionicons name="lock-closed-outline" size={18} color={Colors.dark.textSecondary} />
                 <TextInput
                   style={styles.input}
                   placeholder="At least 6 characters"
                   placeholderTextColor={Colors.dark.textSecondary}
-                  value={password}
-                  onChangeText={setPassword}
+                  value={newPassword}
+                  onChangeText={setNewPassword}
                   secureTextEntry
                 />
               </View>
             </View>
 
             <View style={styles.inputGroup}>
-              <Text style={styles.label}>Confirm Password</Text>
+              <Text style={styles.label}>Confirm New Password</Text>
               <View style={styles.inputWrapper}>
                 <Ionicons name="lock-closed-outline" size={18} color={Colors.dark.textSecondary} />
                 <TextInput
                   style={styles.input}
-                  placeholder="Re-enter password"
+                  placeholder="Re-enter new password"
                   placeholderTextColor={Colors.dark.textSecondary}
                   value={confirmPassword}
                   onChangeText={setConfirmPassword}
@@ -301,7 +238,7 @@ export default function RegisterScreen() {
             </View>
 
             <Pressable
-              onPress={handleVerifyAndRegister}
+              onPress={handleResetPassword}
               disabled={loading}
               style={({ pressed }) => [styles.primaryBtn, pressed && styles.btnPressed]}
             >
@@ -314,19 +251,19 @@ export default function RegisterScreen() {
                 {loading ? (
                   <ActivityIndicator color="#0A0A1A" />
                 ) : (
-                  <Text style={styles.primaryBtnText}>Create Account</Text>
+                  <Text style={styles.primaryBtnText}>Reset Password</Text>
                 )}
               </LinearGradient>
             </Pressable>
 
-            <Pressable onPress={handleResendOtp} disabled={loading}>
+            <Pressable onPress={handleResendCode} disabled={loading}>
               <Text style={styles.resendText}>Didn't get the code? <Text style={styles.resendLink}>Resend</Text></Text>
             </Pressable>
           </View>
         )}
 
         <View style={styles.footer}>
-          <Text style={styles.footerText}>Already have an account?</Text>
+          <Text style={styles.footerText}>Remember your password?</Text>
           <Pressable onPress={() => router.replace("/(auth)/login")}>
             <Text style={styles.footerLink}>Sign In</Text>
           </Pressable>
@@ -356,16 +293,31 @@ const styles = StyleSheet.create({
   titleArea: {
     marginTop: 20,
     marginBottom: 8,
+    alignItems: "center",
+  },
+  iconCircle: {
+    width: 64,
+    height: 64,
+    borderRadius: 32,
+    backgroundColor: "rgba(212, 168, 83, 0.1)",
+    borderWidth: 2,
+    borderColor: Colors.dark.accent,
+    alignItems: "center",
+    justifyContent: "center",
+    marginBottom: 16,
   },
   title: {
     fontFamily: "Cinzel_700Bold",
-    fontSize: 28,
+    fontSize: 24,
     color: Colors.dark.text,
+    textAlign: "center",
   },
   subtitle: {
-    fontSize: 15,
+    fontSize: 14,
     color: Colors.dark.textSecondary,
-    marginTop: 6,
+    marginTop: 8,
+    textAlign: "center",
+    lineHeight: 20,
   },
   errorBox: {
     flexDirection: "row",
@@ -396,38 +348,6 @@ const styles = StyleSheet.create({
     color: "#2ECC71",
     fontSize: 13,
     flex: 1,
-  },
-  googleBtn: {
-    borderRadius: 14,
-    overflow: "hidden",
-  },
-  googleBtnInner: {
-    flexDirection: "row",
-    alignItems: "center",
-    justifyContent: "center",
-    gap: 10,
-    backgroundColor: "#FFFFFF",
-    paddingVertical: 14,
-    borderRadius: 14,
-  },
-  googleBtnText: {
-    color: "#333333",
-    fontSize: 16,
-    fontWeight: "600",
-  },
-  divider: {
-    flexDirection: "row",
-    alignItems: "center",
-    gap: 12,
-  },
-  dividerLine: {
-    flex: 1,
-    height: 1,
-    backgroundColor: "rgba(255,255,255,0.12)",
-  },
-  dividerText: {
-    color: Colors.dark.textSecondary,
-    fontSize: 13,
   },
   form: {
     gap: 20,

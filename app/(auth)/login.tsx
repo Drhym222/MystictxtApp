@@ -179,6 +179,10 @@ export default function LoginScreen() {
               )}
             </LinearGradient>
           </Pressable>
+
+          <Pressable onPress={() => router.push("/(auth)/forgot-password")} style={{ alignSelf: "center" }}>
+            <Text style={styles.forgotText}>Forgot Password?</Text>
+          </Pressable>
         </View>
 
         <View style={styles.footer}>
@@ -323,6 +327,11 @@ const styles = StyleSheet.create({
     justifyContent: "center",
     gap: 6,
     marginTop: 16,
+  },
+  forgotText: {
+    color: Colors.dark.accent,
+    fontSize: 14,
+    fontWeight: "500",
   },
   footerText: {
     color: Colors.dark.textSecondary,
