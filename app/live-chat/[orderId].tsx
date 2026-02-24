@@ -10,7 +10,7 @@ import { useAuth } from "@/lib/auth-context";
 import { apiFetch } from "@/lib/api";
 import Colors from "@/constants/colors";
 
-const EXTENSION_WINDOW_SECONDS = 60;
+const GRACE_WINDOW_SECONDS = 49;
 
 export default function LiveChatScreen() {
   const { orderId } = useLocalSearchParams<{ orderId: string }>();
@@ -23,9 +23,9 @@ export default function LiveChatScreen() {
   const [messageText, setMessageText] = useState("");
   const flatListRef = useRef<FlatList>(null);
   const isAdmin = user?.role === "admin";
-  const [extensionCountdown, setExtensionCountdown] = useState(EXTENSION_WINDOW_SECONDS);
-  const [showExtensionWindow, setShowExtensionWindow] = useState(false);
-  const extensionTriggered = useRef(false);
+  const [graceCountdown, setGraceCountdown] = useState(GRACE_WINDOW_SECONDS);
+  const [showGraceWindow, setShowGraceWindow] = useState(false);
+  const graceTriggered = useRef(false);
   const pulseAnim = useRef(new Animated.Value(1)).current;
 
   const { data: session, isLoading: sessionLoading } = useQuery({
@@ -117,10 +117,10 @@ export default function LiveChatScreen() {
   const isExpired = remainingSeconds <= 0 && session?.status === "active";
 
   useEffect(() => {
-    if (isExpired && session?.status === "active" && !extensionTriggered.current && !isAdmin) {
-      extensionTriggered.current = true;
-      setShowExtensionWindow(true);
-      setExtensionCountdown(EXTENSION_WINDOW_SECONDS);
+    if (isExpired && session?.status === "active" && !graceTriggered.current) {
+      graceTriggered.current = true;
+      setShowGraceWindow(true);
+      setGraceCountdown(GRACE_WINDOW_SECONDS);
       try { Haptics.notificationAsync(Haptics.NotificationFeedbackType.Warning); } catch {}
 
       Animated.loop(
@@ -130,19 +130,22 @@ export default function LiveChatScreen() {
         ])
       ).start();
     }
-  }, [isExpired, session?.status, isAdmin]);
+  }, [isExpired, session?.status]);
 
   useEffect(() => {
-    if (!showExtensionWindow) return;
-    if (extensionCountdown <= 0) {
-      setShowExtensionWindow(false);
+    if (!showGraceWindow) return;
+    if (graceCountdown <= 0) {
+      setShowGraceWindow(false);
+      if (session?.id && isAdmin) {
+        endSessionMutation.mutate(session.id);
+      }
       return;
     }
     const timer = setTimeout(() => {
-      setExtensionCountdown(prev => prev - 1);
+      setGraceCountdown(prev => prev - 1);
     }, 1000);
     return () => clearTimeout(timer);
-  }, [showExtensionWindow, extensionCountdown]);
+  }, [showGraceWindow, graceCountdown]);
 
   function handleBuyMoreTime() {
     router.push({ pathname: "/service/[slug]", params: { slug: "live-chat" } });
@@ -335,45 +338,54 @@ export default function LiveChatScreen() {
           </View>
         )}
 
-        {isExpired && session.status === "active" && !showExtensionWindow && (
+        {isExpired && session.status === "active" && !showGraceWindow && (
           <View style={[styles.expiredBar, { paddingBottom: bottomPadding + 8 }]}>
             <Ionicons name="time-outline" size={18} color={Colors.dark.error} />
             <Text style={styles.expiredText}>Session time has expired</Text>
           </View>
         )}
 
-        {showExtensionWindow && !isAdmin && (
-          <Animated.View style={[styles.extensionOverlay, { transform: [{ scale: pulseAnim }] }]}>
-            <View style={styles.extensionCard}>
-              <View style={styles.extensionTimerCircle}>
-                <Text style={styles.extensionTimerNumber}>{extensionCountdown}</Text>
-                <Text style={styles.extensionTimerLabel}>sec</Text>
+        {showGraceWindow && (
+          <Animated.View style={[styles.graceOverlay, { transform: [{ scale: pulseAnim }] }]}>
+            <View style={styles.graceCard}>
+              <View style={styles.graceTimerCircle}>
+                <Text style={styles.graceTimerNumber}>{graceCountdown}</Text>
+                <Text style={styles.graceTimerLabel}>sec</Text>
               </View>
 
-              <Text style={styles.extensionTitle}>Session Time Expired</Text>
-              <Text style={styles.extensionText}>
-                Your chat session has ended. Would you like to continue chatting with your advisor?
+              <Text style={styles.graceTitle}>Time's Up</Text>
+              <Text style={styles.graceText}>
+                {isAdmin
+                  ? "The client's session time has expired. Waiting for them to purchase more time..."
+                  : "Your chat session has ended. Purchase more time to continue chatting with your advisor."}
               </Text>
 
-              <Pressable
-                onPress={handleBuyMoreTime}
-                style={({ pressed }) => [styles.buyMoreBtn, pressed && { opacity: 0.85 }]}
-              >
-                <LinearGradient
-                  colors={["#D4A853", "#B08930"]}
-                  style={styles.buyMoreBtnGradient}
-                  start={{ x: 0, y: 0 }}
-                  end={{ x: 1, y: 0 }}
+              {!isAdmin && (
+                <Pressable
+                  onPress={handleBuyMoreTime}
+                  style={({ pressed }) => [styles.buyMoreBtn, pressed && { opacity: 0.85 }]}
                 >
-                  <Ionicons name="add-circle" size={20} color="#0A0A1A" />
-                  <Text style={styles.buyMoreBtnText}>Purchase More Time</Text>
-                </LinearGradient>
-              </Pressable>
+                  <LinearGradient
+                    colors={["#D4A853", "#B08930"]}
+                    style={styles.buyMoreBtnGradient}
+                    start={{ x: 0, y: 0 }}
+                    end={{ x: 1, y: 0 }}
+                  >
+                    <Ionicons name="add-circle" size={20} color="#0A0A1A" />
+                    <Text style={styles.buyMoreBtnText}>Purchase More Time</Text>
+                  </LinearGradient>
+                </Pressable>
+              )}
 
               <Pressable
                 onPress={() => {
-                  setShowExtensionWindow(false);
-                  router.push("/(main)/orders");
+                  setShowGraceWindow(false);
+                  if (session?.id && isAdmin) {
+                    endSessionMutation.mutate(session.id);
+                  }
+                  if (!isAdmin) {
+                    router.push("/(main)/orders");
+                  }
                 }}
                 style={({ pressed }) => [styles.endSessionBtn, pressed && { opacity: 0.7 }]}
               >
@@ -649,7 +661,7 @@ const styles = StyleSheet.create({
     fontWeight: "700",
     fontSize: 15,
   },
-  extensionOverlay: {
+  graceOverlay: {
     position: "absolute",
     top: 0,
     left: 0,
@@ -661,7 +673,7 @@ const styles = StyleSheet.create({
     zIndex: 100,
     padding: 20,
   },
-  extensionCard: {
+  graceCard: {
     backgroundColor: Colors.dark.surface,
     borderRadius: 24,
     padding: 32,
@@ -672,7 +684,7 @@ const styles = StyleSheet.create({
     borderColor: "rgba(212, 168, 83, 0.3)",
     gap: 12,
   },
-  extensionTimerCircle: {
+  graceTimerCircle: {
     width: 80,
     height: 80,
     borderRadius: 40,
@@ -682,24 +694,24 @@ const styles = StyleSheet.create({
     justifyContent: "center",
     marginBottom: 8,
   },
-  extensionTimerNumber: {
+  graceTimerNumber: {
     fontSize: 28,
     fontWeight: "800",
     color: Colors.dark.error,
   },
-  extensionTimerLabel: {
+  graceTimerLabel: {
     fontSize: 11,
     color: Colors.dark.error,
     fontWeight: "600",
     marginTop: -4,
   },
-  extensionTitle: {
+  graceTitle: {
     fontFamily: "Cinzel_700Bold",
     fontSize: 18,
     color: Colors.dark.text,
     textAlign: "center",
   },
-  extensionText: {
+  graceText: {
     fontSize: 14,
     color: Colors.dark.textSecondary,
     textAlign: "center",
