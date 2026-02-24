@@ -15,7 +15,7 @@ import {
 import { registerSchema, loginSchema, createOrderSchema, orders, orderIntake, chatSessions, notifications, users, otpCodes } from "@shared/schema";
 import { db } from "./db";
 import { eq, and, gt, desc } from "drizzle-orm";
-import { sendOtpEmail } from "./email";
+import { sendOtpEmail, sendLiveChatAlert } from "./email";
 
 const JWT_SECRET = process.env.SESSION_SECRET || "mystic-secret-key-change-me";
 
@@ -565,6 +565,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
               body: `${intake?.fullName || 'A client'} is requesting a ${chatMinutes}-minute live chat session!`,
               orderId: order.id,
             });
+            sendLiveChatAlert(admin.email, intake?.fullName || 'A client', chatMinutes);
           }
         }
       }
