@@ -11,6 +11,7 @@ import { apiFetch } from "@/lib/api";
 import Colors from "@/constants/colors";
 import * as Haptics from "expo-haptics";
 import * as WebBrowser from "expo-web-browser";
+import * as Linking from "expo-linking";
 
 export default function OrderFormScreen() {
   const { serviceId, serviceTitle, price, deliveryType: initialDeliveryType, chatMinutes: chatMinutesParam } = useLocalSearchParams<{
@@ -63,13 +64,18 @@ export default function OrderFormScreen() {
 
       setPaymentStep("paying");
 
-      await WebBrowser.openBrowserAsync(paymentResult.checkoutUrl, {
-        dismissButtonStyle: "done",
-        presentationStyle: WebBrowser.WebBrowserPresentationStyle.FULL_SCREEN,
-      });
+      if (Platform.OS === "web") {
+        window.location.href = paymentResult.checkoutUrl;
+        return { orderId, paid: false, webRedirect: true };
+      } else {
+        await WebBrowser.openBrowserAsync(paymentResult.checkoutUrl, {
+          dismissButtonStyle: "done",
+          presentationStyle: WebBrowser.WebBrowserPresentationStyle.FULL_SCREEN,
+        });
+      }
 
       let paid = false;
-      for (let i = 0; i < 10; i++) {
+      for (let i = 0; i < 15; i++) {
         await new Promise(r => setTimeout(r, 2000));
         try {
           const verify = await apiFetch(`api/payments/verify/${orderId}`, { token });
@@ -80,9 +86,10 @@ export default function OrderFormScreen() {
         } catch {}
       }
 
-      return { orderId, paid };
+      return { orderId, paid, webRedirect: false };
     },
     onSuccess: (result) => {
+      if (result?.webRedirect) return;
       try { Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success); } catch {}
       queryClient.invalidateQueries({ queryKey: ["client-orders"] });
       setPaymentStep("form");
@@ -205,7 +212,7 @@ export default function OrderFormScreen() {
           <View style={styles.infoBox}>
             <Ionicons name="shield-checkmark-outline" size={18} color={Colors.dark.accent} />
             <Text style={styles.infoText}>
-              Secure payment powered by Korapay. Your order will be processed immediately after payment.
+              Secure payment via Stripe or PayPal. Your order will be processed immediately after payment.
               {isExpress ? " Express delivery within 59 minutes." : " Standard delivery within 24 hours."}
             </Text>
           </View>

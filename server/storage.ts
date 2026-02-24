@@ -73,32 +73,39 @@ export async function updateOrderPayment(orderId: string, paymentReference: stri
     const [intake] = await db.select().from(orderIntake).where(eq(orderIntake.orderId, orderId));
 
     if (service?.slug === "live-chat") {
-      const chatMinutes = (intake?.detailsJson as any)?.chatMinutes || 5;
-      const [session] = await db.insert(chatSessions).values({
-        orderId: order.id,
-        clientId: order.clientId,
-        purchasedMinutes: chatMinutes,
-        status: "ringing",
-      }).returning();
-
-      for (const admin of adminUsers) {
-        await db.insert(notifications).values({
-          userId: admin.id,
-          type: "live_chat_ringing",
-          title: "Incoming Live Chat",
-          body: `${intake?.fullName || 'A client'} is requesting a ${chatMinutes}-minute live chat session!`,
+      const existingSession = await getChatSessionByOrderId(order.id);
+      if (!existingSession) {
+        const chatMinutes = (intake?.detailsJson as any)?.chatMinutes || 5;
+        await db.insert(chatSessions).values({
           orderId: order.id,
-        });
+          clientId: order.clientId,
+          purchasedMinutes: chatMinutes,
+          status: "ringing",
+        }).returning();
+
+        for (const admin of adminUsers) {
+          await db.insert(notifications).values({
+            userId: admin.id,
+            type: "live_chat_ringing",
+            title: "Incoming Live Chat",
+            body: `${intake?.fullName || 'A client'} is requesting a ${chatMinutes}-minute live chat session!`,
+            orderId: order.id,
+          });
+        }
       }
     } else {
-      for (const admin of adminUsers) {
-        await db.insert(notifications).values({
-          userId: admin.id,
-          type: "new_order",
-          title: "New Order Received",
-          body: `New paid order #${order.id.slice(0, 8)} from ${intake?.fullName || 'a client'}`,
-          orderId: order.id,
-        });
+      const existingNotifs = await db.select().from(notifications)
+        .where(eq(notifications.orderId, orderId));
+      if (existingNotifs.length === 0) {
+        for (const admin of adminUsers) {
+          await db.insert(notifications).values({
+            userId: admin.id,
+            type: "new_order",
+            title: "New Order Received",
+            body: `New paid order #${order.id.slice(0, 8)} from ${intake?.fullName || 'a client'}`,
+            orderId: order.id,
+          });
+        }
       }
     }
   }

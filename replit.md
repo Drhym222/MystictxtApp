@@ -71,13 +71,12 @@ Preferred communication style: Simple, everyday language.
 - Two delivery tiers: Standard (base price) and Express (base price + $10.00 surcharge)
 - **Service prices**: Psychic Reading $4.99, Tarot Reading $4.99, Telepathy Mind Reading $4.99, Find Lost/Missing Items $89.99, Live Chat $3.99/5min (time-based)
 - **Live Chat**: Time-based pricing at $0.80/min ($3.99/5min, $7.99/10min, $11.99/15min, $19.99/30min, $35.99/60min, custom minutes)
-- At checkout, backend converts USD to NGN (rate ~1580) for Korapay payment processing
+### Payment Integration (Stripe)
 
-### Payment Integration (Korapay)
-
-- Payment flow: Create order → Initialize payment via Korapay API → Redirect to hosted checkout → Webhook verification → Mark as paid
-- Payment is only confirmed via webhook (not success page redirect)
-- Uses `expo-web-browser` to open payment URLs on native platforms
+- Payment flow: Create order → Initialize Stripe Checkout Session → Redirect to Stripe hosted checkout → Callback verification + webhook → Mark as paid
+- Payment is confirmed via Stripe Checkout Session verification on callback, and optionally via webhook
+- Uses `expo-web-browser` to open Stripe checkout URLs on native platforms
+- All prices are in USD cents, charged directly in USD (no currency conversion)
 
 ### Shared Code
 
@@ -96,7 +95,7 @@ Preferred communication style: Simple, everyday language.
 - **PostgreSQL** — Primary data store, connected via `DATABASE_URL` environment variable, accessed through `pg` pool + Drizzle ORM
 
 ### Payment Processing
-- **Korapay API** — Handles payment processing with hosted checkout flow. USD prices are converted to NGN server-side before charging. Webhook-based payment verification is required.
+- **Stripe** — Handles payment processing via Stripe Checkout Sessions. Prices are charged in USD. Payment is verified via session retrieval on callback and optionally via Stripe webhook.
 
 ### Authentication & Security
 - **jsonwebtoken** — JWT token generation and verification (7-day expiry)
@@ -121,4 +120,6 @@ Preferred communication style: Simple, everyday language.
 - `DATABASE_URL` — PostgreSQL connection string
 - `SESSION_SECRET` — JWT signing secret
 - `EXPO_PUBLIC_DOMAIN` — API server domain (set automatically on Replit)
-- Korapay API keys (for payment processing)
+- `STRIPE_SECRET_KEY` — Stripe secret API key
+- `STRIPE_PUBLISHABLE_KEY` — Stripe publishable API key
+- `STRIPE_WEBHOOK_SECRET` — (Optional) Stripe webhook signing secret

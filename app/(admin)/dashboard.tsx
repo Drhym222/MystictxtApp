@@ -1,5 +1,5 @@
-import React from "react";
-import { View, Text, Pressable, StyleSheet, Platform, ScrollView, ActivityIndicator, RefreshControl, Switch } from "react-native";
+import React, { useEffect, useRef } from "react";
+import { View, Text, Pressable, StyleSheet, Platform, ScrollView, ActivityIndicator, RefreshControl, Switch, Animated } from "react-native";
 import { LinearGradient } from "expo-linear-gradient";
 import { router } from "expo-router";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
@@ -10,9 +10,34 @@ import { apiFetch } from "@/lib/api";
 import Colors from "@/constants/colors";
 import * as Haptics from "expo-haptics";
 
+function PulsingDot() {
+  const pulseAnim = useRef(new Animated.Value(1)).current;
+  useEffect(() => {
+    const loop = Animated.loop(
+      Animated.sequence([
+        Animated.timing(pulseAnim, { toValue: 1.6, duration: 600, useNativeDriver: Platform.OS !== "web" }),
+        Animated.timing(pulseAnim, { toValue: 1, duration: 600, useNativeDriver: Platform.OS !== "web" }),
+      ])
+    );
+    loop.start();
+    return () => loop.stop();
+  }, []);
+  return (
+    <View style={{ width: 24, height: 24, alignItems: "center", justifyContent: "center" }}>
+      <Animated.View style={{
+        width: 12, height: 12, borderRadius: 6,
+        backgroundColor: "#FF5252",
+        transform: [{ scale: pulseAnim }],
+        opacity: pulseAnim.interpolate({ inputRange: [1, 1.6], outputRange: [1, 0.4] }),
+      }} />
+    </View>
+  );
+}
+
 export default function AdminDashboard() {
   const insets = useSafeAreaInsets();
   const { token } = useAuth();
+  const prevRingingCount = useRef(0);
   const queryClient = useQueryClient();
   const topPadding = Platform.OS === "web" ? 67 : insets.top;
 
@@ -80,6 +105,19 @@ export default function AdminDashboard() {
       try { Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success); } catch {}
     },
   });
+
+  useEffect(() => {
+    const ringingCount = (ringingChats || []).length;
+    if (ringingCount > 0 && ringingCount > prevRingingCount.current) {
+      try { Haptics.notificationAsync(Haptics.NotificationFeedbackType.Warning); } catch {}
+      const interval = setInterval(() => {
+        try { Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Heavy); } catch {}
+      }, 2000);
+      const timeout = setTimeout(() => clearInterval(interval), 10000);
+      return () => { clearInterval(interval); clearTimeout(timeout); };
+    }
+    prevRingingCount.current = ringingCount;
+  }, [(ringingChats || []).length]);
 
   const liveChatEnabled = chatSetting?.enabled || false;
 
@@ -177,7 +215,7 @@ export default function AdminDashboard() {
                 <Text style={styles.ringSectionTitle}>Incoming Chats</Text>
                 {(ringingChats || []).map((chat: any) => (
                   <View key={chat.id} style={styles.ringingCard}>
-                    <View style={styles.ringingPulse} />
+                    <PulsingDot />
                     <View style={{ flex: 1 }}>
                       <Text style={styles.ringingName}>{chat.order?.intake?.fullName || "Client"}</Text>
                       <Text style={styles.ringingTime}>{chat.purchasedMinutes} min session</Text>

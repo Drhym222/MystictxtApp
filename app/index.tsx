@@ -1,5 +1,5 @@
 import React, { useEffect } from "react";
-import { View, Text, Pressable, StyleSheet, Platform, ActivityIndicator } from "react-native";
+import { View, Text, Pressable, StyleSheet, Platform, ActivityIndicator, Image } from "react-native";
 import { LinearGradient } from "expo-linear-gradient";
 import { router } from "expo-router";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
@@ -38,15 +38,11 @@ export default function WelcomeScreen() {
 
       <View style={styles.content}>
         <Animated.View entering={FadeInUp.delay(200).duration(800)} style={styles.logoArea}>
-          <View style={styles.orbContainer}>
-            <LinearGradient
-              colors={["#D4A853", "#E8C878", "#B08930"]}
-              style={styles.orb}
-              start={{ x: 0, y: 0 }}
-              end={{ x: 1, y: 1 }}
-            />
-            <View style={styles.orbGlow} />
-          </View>
+          <Image
+            source={require("@/assets/images/icon.png")}
+            style={styles.logoImage}
+            resizeMode="contain"
+          />
           <Text style={styles.title}>MysticTxt</Text>
           <Text style={styles.subtitle}>Unveil Your Destiny</Text>
         </Animated.View>
@@ -113,24 +109,11 @@ const styles = StyleSheet.create({
     alignItems: "center",
     marginBottom: 48,
   },
-  orbContainer: {
-    width: 80,
-    height: 80,
+  logoImage: {
+    width: 100,
+    height: 100,
+    borderRadius: 24,
     marginBottom: 24,
-    alignItems: "center",
-    justifyContent: "center",
-  },
-  orb: {
-    width: 60,
-    height: 60,
-    borderRadius: 30,
-  },
-  orbGlow: {
-    position: "absolute",
-    width: 80,
-    height: 80,
-    borderRadius: 40,
-    backgroundColor: "rgba(212, 168, 83, 0.15)",
   },
   title: {
     fontFamily: "Cinzel_700Bold",
