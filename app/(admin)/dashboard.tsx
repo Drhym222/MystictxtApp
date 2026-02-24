@@ -9,7 +9,6 @@ import { useAuth } from "@/lib/auth-context";
 import { apiFetch } from "@/lib/api";
 import Colors from "@/constants/colors";
 import * as Haptics from "expo-haptics";
-import { useAudioPlayer, AudioModule } from "expo-audio";
 
 function IncomingCallCard({ chat, onAccept, onDecline, isAccepting }: {
   chat: any;
@@ -17,12 +16,9 @@ function IncomingCallCard({ chat, onAccept, onDecline, isAccepting }: {
   onDecline: () => void;
   isAccepting: boolean;
 }) {
-  const ringAnim = useRef(new Animated.Value(0)).current;
   const scaleAnim = useRef(new Animated.Value(1)).current;
   const glowAnim = useRef(new Animated.Value(0)).current;
-
-  const ringtoneSource = require("@/assets/ringtone.mp3");
-  const player = useAudioPlayer(ringtoneSource);
+  const ringAnim = useRef(new Animated.Value(0)).current;
 
   useEffect(() => {
     const ringLoop = Animated.loop(
@@ -53,28 +49,12 @@ function IncomingCallCard({ chat, onAccept, onDecline, isAccepting }: {
     pulseLoop.start();
     glowLoop.start();
 
-    const hapticInterval = setInterval(() => {
-      try { Haptics.notificationAsync(Haptics.NotificationFeedbackType.Warning); } catch {}
-    }, 2000);
-
-    try {
-      player.loop = true;
-      player.volume = 1.0;
-      player.play();
-    } catch {}
-
     return () => {
       ringLoop.stop();
       pulseLoop.stop();
       glowLoop.stop();
-      clearInterval(hapticInterval);
-      try { player.pause(); } catch {}
     };
   }, []);
-
-  const stopSound = () => {
-    try { player.pause(); } catch {}
-  };
 
   const rotateInterpolate = ringAnim.interpolate({
     inputRange: [-1, 0, 1],
@@ -108,10 +88,7 @@ function IncomingCallCard({ chat, onAccept, onDecline, isAccepting }: {
 
         <View style={styles.callActions}>
           <Pressable
-            onPress={() => {
-              stopSound();
-              onDecline();
-            }}
+            onPress={onDecline}
             style={({ pressed }) => [styles.callDeclineBtn, pressed && { opacity: 0.8 }]}
           >
             <View style={styles.callDeclineBtnInner}>
@@ -121,10 +98,7 @@ function IncomingCallCard({ chat, onAccept, onDecline, isAccepting }: {
           </Pressable>
 
           <Pressable
-            onPress={() => {
-              stopSound();
-              onAccept();
-            }}
+            onPress={onAccept}
             disabled={isAccepting}
             style={({ pressed }) => [styles.callAcceptBtn, pressed && { opacity: 0.8 }]}
           >
