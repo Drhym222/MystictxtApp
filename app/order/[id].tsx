@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from "react";
-import { View, Text, Pressable, StyleSheet, Platform, ScrollView, ActivityIndicator, TextInput } from "react-native";
+import { View, Text, Pressable, StyleSheet, Platform, ActivityIndicator, TextInput } from "react-native";
 import { LinearGradient } from "expo-linear-gradient";
 import { router, useLocalSearchParams } from "expo-router";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
@@ -8,6 +8,7 @@ import { Ionicons } from "@expo/vector-icons";
 import * as Haptics from "expo-haptics";
 import { useAuth } from "@/lib/auth-context";
 import { apiFetch } from "@/lib/api";
+import { KeyboardAwareScrollViewCompat } from "@/components/KeyboardAwareScrollViewCompat";
 import Colors from "@/constants/colors";
 
 const STATUS_CONFIG: Record<string, { color: string; icon: string; label: string }> = {
@@ -92,9 +93,10 @@ export default function OrderDetailScreen() {
         <View style={{ width: 28 }} />
       </View>
 
-      <ScrollView
+      <KeyboardAwareScrollViewCompat
         contentContainerStyle={[styles.scrollContent, { paddingBottom: (Platform.OS === "web" ? 34 : insets.bottom) + 20 }]}
         showsVerticalScrollIndicator={false}
+        bottomOffset={40}
       >
         <View style={styles.statusCard}>
           <View style={[styles.statusBadgeLarge, { backgroundColor: `${config.color}20` }]}>
@@ -241,7 +243,7 @@ export default function OrderDetailScreen() {
             </View>
           </View>
         )}
-      </ScrollView>
+      </KeyboardAwareScrollViewCompat>
     </View>
   );
 }
