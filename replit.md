@@ -35,11 +35,12 @@ Preferred communication style: Simple, everyday language.
 
 - **Server**: Express 5 running on the same Replit instance, serves API routes and static builds
 - **API Prefix**: All API routes are under `/api/`
-- **Authentication**: JWT-based (jsonwebtoken), tokens stored in SecureStore (native) or AsyncStorage (web). Bearer token pattern in Authorization header.
+- **Authentication**: JWT-based (jsonwebtoken), tokens stored in SecureStore (native) or AsyncStorage (web). Bearer token pattern in Authorization header. Google Sign-In via expo-auth-session (OAuth ID token flow) with backend verification at `/api/auth/google`.
 - **Password Hashing**: bcryptjs
 - **Key API Endpoints**:
   - `POST /api/auth/register` — Client registration
   - `POST /api/auth/login` — Login (both client and admin)
+  - `POST /api/auth/google` — Google Sign-In (verifies Google ID token, creates/logs in client)
   - `GET /api/services` — List active services
   - `GET /api/services/:slug` — Service detail
   - `POST /api/orders` — Create order (authenticated)
@@ -120,6 +121,7 @@ Preferred communication style: Simple, everyday language.
 - `DATABASE_URL` — PostgreSQL connection string
 - `SESSION_SECRET` — JWT signing secret
 - `EXPO_PUBLIC_DOMAIN` — API server domain (set automatically on Replit)
+- `EXPO_PUBLIC_GOOGLE_CLIENT_ID` — Google OAuth Web Client ID for Google Sign-In
 - `STRIPE_SECRET_KEY` — Stripe secret API key
 - `STRIPE_PUBLISHABLE_KEY` — Stripe publishable API key
 - `STRIPE_WEBHOOK_SECRET` — (Optional) Stripe webhook signing secret
