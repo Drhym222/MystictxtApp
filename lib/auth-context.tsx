@@ -17,6 +17,7 @@ interface AuthContextValue {
   isLoading: boolean;
   login: (email: string, password: string) => Promise<{ success: boolean; error?: string }>;
   register: (email: string, password: string) => Promise<{ success: boolean; error?: string }>;
+  googleSignIn: (idToken: string) => Promise<{ success: boolean; error?: string }>;
   logout: () => Promise<void>;
 }
 
@@ -185,6 +186,40 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     }
   }
 
+  async function googleSignIn(idToken: string) {
+    try {
+      const baseUrl = getApiUrl();
+      const res = await fetch(`${baseUrl}api/auth/google`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ idToken }),
+      });
+
+      let data: any;
+      try {
+        const text = await res.text();
+        data = JSON.parse(text);
+      } catch {
+        return { success: false, error: 'Server returned an invalid response' };
+      }
+
+      if (!res.ok) {
+        return { success: false, error: data.message || 'Google sign-in failed' };
+      }
+
+      if (!data.token) {
+        return { success: false, error: 'Server response missing token' };
+      }
+
+      await saveToken(data.token);
+      setToken(data.token);
+      setUser(data.user);
+      return { success: true };
+    } catch (err: any) {
+      return { success: false, error: `Google sign-in error: ${err.message}` };
+    }
+  }
+
   async function logout() {
     await removeToken();
     setToken(null);
@@ -192,7 +227,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   }
 
   const value = useMemo(() => ({
-    user, token, isLoading, login, register, logout,
+    user, token, isLoading, login, register, googleSignIn, logout,
   }), [user, token, isLoading]);
 
   return (

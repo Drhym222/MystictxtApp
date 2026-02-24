@@ -108,6 +108,48 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
+  app.post("/api/auth/google", async (req: Request, res: Response) => {
+    try {
+      const { idToken } = req.body;
+      if (!idToken) {
+        return res.status(400).json({ message: "Missing Google ID token" });
+      }
+
+      const googleClientId = process.env.EXPO_PUBLIC_GOOGLE_CLIENT_ID;
+      const tokenInfoUrl = `https://oauth2.googleapis.com/tokeninfo?id_token=${idToken}`;
+      const tokenRes = await globalThis.fetch(tokenInfoUrl);
+      if (!tokenRes.ok) {
+        return res.status(401).json({ message: "Invalid Google token" });
+      }
+      const tokenData = await tokenRes.json() as any;
+
+      if (googleClientId && tokenData.aud !== googleClientId) {
+        return res.status(401).json({ message: "Token audience mismatch" });
+      }
+
+      const email = tokenData.email?.toLowerCase();
+      if (!email) {
+        return res.status(400).json({ message: "No email in Google token" });
+      }
+
+      let user = await getUserByEmail(email);
+      if (!user) {
+        const randomHash = await bcrypt.hash(Math.random().toString(36), 10);
+        user = await createUser(email, randomHash, "client");
+      }
+
+      if (user.role === "admin") {
+        return res.status(403).json({ message: "Admin accounts cannot use Google Sign-In" });
+      }
+
+      const token = generateToken(user.id, user.role);
+      res.json({ token, user: { id: user.id, email: user.email, role: user.role } });
+    } catch (err) {
+      console.error("Google auth error:", err);
+      res.status(500).json({ message: "Google authentication failed" });
+    }
+  });
+
   app.get("/api/services", async (_req: Request, res: Response) => {
     try {
       const serviceList = await getServices();
