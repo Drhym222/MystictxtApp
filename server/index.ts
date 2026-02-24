@@ -218,19 +218,23 @@ function configureExpoAndLanding(app: express.Application) {
 
   app.use(express.static(path.resolve(process.cwd(), "static-build")));
 
-  if (webDistExists) {
-    app.use((req: Request, res: Response, next: NextFunction) => {
-      if (req.path.startsWith("/api") || req.path.startsWith("/assets")) {
-        return next();
-      }
-      if (req.method === "GET" && req.accepts("html")) {
-        return res.sendFile(path.join(webDistPath, "index.html"));
-      }
-      next();
-    });
-  }
-
   log("Expo routing: Checking expo-platform header on / and /manifest");
+}
+
+function configureSpaCatchAll(app: express.Application) {
+  const webDistPath = path.resolve(process.cwd(), "dist", "web");
+  const indexPath = path.join(webDistPath, "index.html");
+  if (!fs.existsSync(indexPath)) return;
+
+  app.use((req: Request, res: Response, next: NextFunction) => {
+    if (req.path.startsWith("/api") || req.path.startsWith("/assets")) {
+      return next();
+    }
+    if (req.method === "GET" && req.accepts("html")) {
+      return res.sendFile(indexPath);
+    }
+    next();
+  });
 }
 
 function setupErrorHandler(app: express.Application) {
@@ -262,6 +266,8 @@ function setupErrorHandler(app: express.Application) {
   configureExpoAndLanding(app);
 
   const server = await registerRoutes(app);
+
+  configureSpaCatchAll(app);
 
   setupErrorHandler(app);
 
