@@ -170,20 +170,32 @@ function configureExpoAndLanding(app: express.Application) {
   const landingPageTemplate = fs.readFileSync(templatePath, "utf-8");
   const appName = getAppName();
 
+  const webDistPath = path.resolve(process.cwd(), "dist", "web");
+  const webDistExists = fs.existsSync(path.join(webDistPath, "index.html"));
+
   log("Serving static Expo files with dynamic manifest routing");
+  if (webDistExists) {
+    log("Expo web export found at dist/web — serving web app for browser requests");
+  }
 
   app.use((req: Request, res: Response, next: NextFunction) => {
     if (req.path.startsWith("/api")) {
       return next();
     }
 
+    const platform = req.header("expo-platform");
+    if (platform && (platform === "ios" || platform === "android")) {
+      if (req.path === "/" || req.path === "/manifest") {
+        return serveExpoManifest(platform, res);
+      }
+    }
+
     if (req.path !== "/" && req.path !== "/manifest") {
       return next();
     }
 
-    const platform = req.header("expo-platform");
-    if (platform && (platform === "ios" || platform === "android")) {
-      return serveExpoManifest(platform, res);
+    if (req.path === "/" && webDistExists) {
+      return res.sendFile(path.join(webDistPath, "index.html"));
     }
 
     if (req.path === "/") {
@@ -199,7 +211,24 @@ function configureExpoAndLanding(app: express.Application) {
   });
 
   app.use("/assets", express.static(path.resolve(process.cwd(), "assets")));
+
+  if (webDistExists) {
+    app.use(express.static(webDistPath));
+  }
+
   app.use(express.static(path.resolve(process.cwd(), "static-build")));
+
+  if (webDistExists) {
+    app.use((req: Request, res: Response, next: NextFunction) => {
+      if (req.path.startsWith("/api") || req.path.startsWith("/assets")) {
+        return next();
+      }
+      if (req.method === "GET" && req.accepts("html")) {
+        return res.sendFile(path.join(webDistPath, "index.html"));
+      }
+      next();
+    });
+  }
 
   log("Expo routing: Checking expo-platform header on / and /manifest");
 }
