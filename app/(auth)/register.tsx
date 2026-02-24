@@ -4,19 +4,62 @@ import { LinearGradient } from "expo-linear-gradient";
 import { router } from "expo-router";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { Ionicons } from "@expo/vector-icons";
+import * as Google from "expo-auth-session/providers/google";
+import * as WebBrowser from "expo-web-browser";
 import { KeyboardAwareScrollViewCompat } from "@/components/KeyboardAwareScrollViewCompat";
 import { useAuth } from "@/lib/auth-context";
 import Colors from "@/constants/colors";
 
+WebBrowser.maybeCompleteAuthSession();
+
 export default function RegisterScreen() {
   const insets = useSafeAreaInsets();
-  const { register } = useAuth();
+  const { register, googleSignIn } = useAuth();
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [confirmPassword, setConfirmPassword] = useState("");
   const [loading, setLoading] = useState(false);
+  const [googleLoading, setGoogleLoading] = useState(false);
   const [error, setError] = useState("");
   const topPadding = Platform.OS === "web" ? 67 : insets.top;
+
+  const [_request, response, promptAsync] = Google.useIdTokenAuthRequest({
+    clientId: process.env.EXPO_PUBLIC_GOOGLE_CLIENT_ID,
+  });
+
+  React.useEffect(() => {
+    if (response?.type === "success") {
+      const { id_token } = response.params;
+      handleGoogleAuth(id_token);
+    } else if (response?.type === "error") {
+      setError("Google sign-in was cancelled or failed");
+      setGoogleLoading(false);
+    }
+  }, [response]);
+
+  async function handleGoogleAuth(idToken: string) {
+    setGoogleLoading(true);
+    setError("");
+    const result = await googleSignIn(idToken);
+    setGoogleLoading(false);
+    if (result.success) {
+      router.dismissAll();
+      router.replace("/(main)/services");
+    } else {
+      setError(result.error || "Google sign-in failed");
+    }
+  }
+
+  async function handleGooglePress() {
+    setGoogleLoading(true);
+    setError("");
+    try {
+      await promptAsync();
+    } catch (err: any) {
+      setError("Could not start Google sign-in");
+      setGoogleLoading(false);
+    }
+  }
 
   async function handleRegister() {
     if (!email.trim() || !password.trim() || !confirmPassword.trim()) {
@@ -69,6 +112,29 @@ export default function RegisterScreen() {
             <Text style={styles.errorText} selectable>{error}</Text>
           </View>
         )}
+
+        <Pressable
+          onPress={handleGooglePress}
+          disabled={googleLoading}
+          style={({ pressed }) => [styles.googleBtn, pressed && styles.btnPressed]}
+        >
+          <View style={styles.googleBtnInner}>
+            {googleLoading ? (
+              <ActivityIndicator color="#333" size="small" />
+            ) : (
+              <>
+                <Ionicons name="logo-google" size={20} color="#DB4437" />
+                <Text style={styles.googleBtnText}>Continue with Google</Text>
+              </>
+            )}
+          </View>
+        </Pressable>
+
+        <View style={styles.divider}>
+          <View style={styles.dividerLine} />
+          <Text style={styles.dividerText}>or</Text>
+          <View style={styles.dividerLine} />
+        </View>
 
         <View style={styles.form}>
           <View style={styles.inputGroup}>
@@ -194,6 +260,38 @@ const styles = StyleSheet.create({
     color: Colors.dark.error,
     fontSize: 13,
     flex: 1,
+  },
+  googleBtn: {
+    borderRadius: 14,
+    overflow: "hidden",
+  },
+  googleBtnInner: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "center",
+    gap: 10,
+    backgroundColor: "#FFFFFF",
+    paddingVertical: 14,
+    borderRadius: 14,
+  },
+  googleBtnText: {
+    color: "#333333",
+    fontSize: 16,
+    fontWeight: "600",
+  },
+  divider: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 12,
+  },
+  dividerLine: {
+    flex: 1,
+    height: 1,
+    backgroundColor: "rgba(255,255,255,0.12)",
+  },
+  dividerText: {
+    color: Colors.dark.textSecondary,
+    fontSize: 13,
   },
   form: {
     gap: 20,
