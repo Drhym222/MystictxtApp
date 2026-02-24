@@ -9,7 +9,7 @@ async function getCredentials() {
     : null;
 
   if (!xReplitToken) {
-    throw new Error('X_REPLIT_TOKEN not found for repl/depl');
+    throw new Error('X-Replit-Token not found for repl/depl');
   }
 
   const data = await fetch(
@@ -17,7 +17,7 @@ async function getCredentials() {
     {
       headers: {
         'Accept': 'application/json',
-        'X_REPLIT_TOKEN': xReplitToken
+        'X-Replit-Token': xReplitToken
       }
     }
   ).then(res => res.json()) as any;
@@ -92,6 +92,50 @@ async function sendViaMailerSend(apiKey: string, fromEmail: string, toEmail: str
   if (!res.ok) {
     const text = await res.text();
     throw new Error(`MailerSend error ${res.status}: ${text}`);
+  }
+}
+
+function buildLiveChatAlertHtml(clientName: string, minutes: number, appUrl: string) {
+  return `
+    <div style="font-family: 'Georgia', serif; max-width: 500px; margin: 0 auto; background: #0A0A1A; border-radius: 12px; overflow: hidden;">
+      <div style="background: linear-gradient(135deg, #1A1035 0%, #0A0A1A 100%); padding: 32px; text-align: center;">
+        <h1 style="color: #D4A853; font-size: 28px; margin: 0 0 4px 0;">MysticTxt</h1>
+        <p style="color: #9B8EC4; font-size: 14px; margin: 0;">Incoming Live Chat</p>
+      </div>
+      <div style="padding: 32px; text-align: center;">
+        <div style="background: rgba(76, 175, 80, 0.1); border: 2px solid #4CAF50; border-radius: 12px; padding: 24px; margin: 0 0 24px 0;">
+          <p style="color: #4CAF50; font-size: 20px; font-weight: bold; margin: 0 0 8px 0;">📞 Incoming Call</p>
+          <p style="color: #C8C0D8; font-size: 16px; margin: 0 0 4px 0;">${clientName}</p>
+          <p style="color: #9B8EC4; font-size: 14px; margin: 0;">${minutes}-minute session</p>
+        </div>
+        <p style="color: #C8C0D8; font-size: 15px; line-height: 1.6; margin: 0 0 24px 0;">A client is waiting for you to accept their live chat session. Open the app now to connect!</p>
+        <a href="${appUrl}" style="display: inline-block; background: #D4A853; color: #0A0A1A; text-decoration: none; padding: 14px 32px; border-radius: 8px; font-weight: bold; font-size: 16px;">Open MysticTxt</a>
+      </div>
+      <div style="padding: 16px 32px; border-top: 1px solid rgba(255,255,255,0.06); text-align: center;">
+        <p style="color: #5A5270; font-size: 12px; margin: 0;">This is an automated alert from MysticTxt</p>
+      </div>
+    </div>
+  `;
+}
+
+export async function sendLiveChatAlert(adminEmail: string, clientName: string, minutes: number) {
+  try {
+    const { apiKey, fromEmail } = await getCredentials();
+    const appUrl = process.env.REPLIT_DEV_DOMAIN
+      ? `https://${process.env.REPLIT_DEV_DOMAIN}`
+      : 'https://mystic-text-portals.replit.app';
+
+    const subject = `🔔 MysticTxt - Incoming Live Chat from ${clientName}`;
+    const html = buildLiveChatAlertHtml(clientName, minutes, appUrl);
+
+    if (apiKey.startsWith('mlsn.')) {
+      await sendViaMailerSend(apiKey, fromEmail, adminEmail, subject, html);
+    } else {
+      await sendViaSendGrid(apiKey, fromEmail, adminEmail, subject, html);
+    }
+    console.log(`[Email] Live chat alert sent to ${adminEmail}`);
+  } catch (err) {
+    console.error('[Email] Failed to send live chat alert:', err);
   }
 }
 

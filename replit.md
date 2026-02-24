@@ -87,7 +87,8 @@ Preferred communication style: Simple, everyday language.
 ### Build & Deploy
 
 - **Development**: Two processes — `expo:dev` for the Expo frontend, `server:dev` for the Express backend (via tsx)
-- **Production Build**: `expo:static:build` creates a static web build, `server:build` bundles server with esbuild, `server:prod` runs the production server
+- **Production Build**: Build script (`scripts/build.js`) first runs `expo export --platform web` to create browser-accessible web app in `dist/web/`, then starts Metro for iOS/Android bundle downloads into `static-build/`. Server serves web export for browser requests and manifests for Expo Go requests.
+- **Production Server**: `server:build` bundles server with esbuild, `server:prod` runs the production server serving both the web app and Expo Go manifests
 - **Environment**: `EXPO_PUBLIC_DOMAIN` connects frontend to backend API, `DATABASE_URL` for PostgreSQL, `SESSION_SECRET` for JWT signing
 
 ## External Dependencies

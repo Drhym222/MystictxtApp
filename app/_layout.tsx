@@ -22,6 +22,7 @@ function RootLayoutNav() {
       <Stack.Screen name="service/[slug]" options={{ headerShown: false, animation: "slide_from_right" }} />
       <Stack.Screen name="order/[id]" options={{ headerShown: false, animation: "slide_from_right" }} />
       <Stack.Screen name="order-form" options={{ headerShown: false, presentation: "modal" }} />
+      <Stack.Screen name="live-chat/[orderId]" options={{ headerShown: false, animation: "slide_from_right" }} />
     </Stack>
   );
 }
